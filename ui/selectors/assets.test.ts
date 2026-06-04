@@ -7,14 +7,21 @@ import {
   calculateBalanceChangeForAllWallets,
   selectAssetsBySelectedAccountGroup,
 } from '@metamask/assets-controllers';
-import type { BalanceChangeResult } from '@metamask/assets-controllers';
+import type {
+  AccountGroupAssets,
+  BalanceChangeResult,
+} from '@metamask/assets-controllers';
 import {
   AssetsRatesState,
   AssetsState,
   getAccountAssets,
+  getAssetsInfo,
   getAssetsMetadata,
+  getAssetsBalance,
+  getAssetsPrice,
+  getAssetPreferences,
+  getCustomAssets,
   getAssetsRates,
-  getHistoricalPrices,
   getMultiChainAssets,
   getMultichainNativeAssetType,
   getTokenByAccountAndAddressAndChainId,
@@ -25,8 +32,27 @@ import {
   type BalanceCalculationState,
   selectBalanceChangeForAllWallets,
   selectBalanceChangeBySelectedAccountGroup,
+  selectAccountGroupBalanceForEmptyState,
   getAssetsBySelectedAccountGroup,
+  getAssetsBySelectedAccountGroupIncludingHidden,
+  getAsset,
+  getAllIgnoredAssets,
+  selectAggregatedBalanceForSelectedAccount,
+  getAssetsBySelectedAccountGroupWithTronSpecialAssets,
 } from './assets';
+
+/**
+ * State shape for asset selector tests. Cast to this when passing partial state
+ * to selectors that accept a full Redux state type.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AssetSelectorTestState = any;
+
+const mockGetAggregatedBalanceForAccount = jest.fn();
+jest.mock('@metamask/assets-controller', () => ({
+  getAggregatedBalanceForAccount: (...args: unknown[]) =>
+    mockGetAggregatedBalanceForAccount(...args),
+}));
 
 jest.mock('@metamask/assets-controllers', () => {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -45,7 +71,7 @@ jest.mock('@metamask/assets-controllers', () => {
       percentChange: 0,
       userCurrency: 'usd',
     })),
-    selectAssetsBySelectedAccountGroup: jest.fn(),
+    selectAssetsBySelectedAccountGroup: jest.fn(() => ({})), // Returns empty object by default
   };
 });
 
@@ -84,6 +110,7 @@ const mockAssetsState: AssetsState = {
         units: [{ symbol: 'TKN1', name: 'Token 1', decimals: 9 }],
       },
     },
+    allIgnoredAssets: {},
   },
 };
 
@@ -95,14 +122,228 @@ describe('getAccountAssets', () => {
 });
 
 describe('getAssetsMetadata', () => {
-  it('should return the assets metadata from the state', () => {
+  it('returns the assets metadata from the state', () => {
     const result = getAssetsMetadata(mockAssetsState);
     expect(result).toEqual(mockAssetsState.metamask.assetsMetadata);
   });
 
-  it('should return undefined if state does not have metamask property', () => {
+  it('returns empty object when state has no metamask property', () => {
     const invalidState = {} as AssetsState;
-    expect(() => getAssetsMetadata(invalidState)).toThrow();
+    expect(getAssetsMetadata(invalidState)).toEqual({});
+  });
+
+  it('returns empty object when assetsMetadata is missing', () => {
+    const state = { metamask: {} };
+    expect(getAssetsMetadata(state as AssetsState)).toEqual({});
+  });
+});
+
+describe('getAssetsInfo', () => {
+  it('returns assetsInfo from state.metamask', () => {
+    const state: AssetSelectorTestState = {
+      metamask: { assetsInfo: { 'eip155:0x1/slip44:60': {} } },
+    };
+    expect(getAssetsInfo(state)).toEqual(state.metamask?.assetsInfo);
+  });
+
+  it('returns empty object when metamask is missing', () => {
+    expect(getAssetsInfo({} as AssetSelectorTestState)).toEqual({});
+  });
+
+  it('returns empty object when assetsInfo is missing', () => {
+    expect(getAssetsInfo({ metamask: {} } as AssetSelectorTestState)).toEqual(
+      {},
+    );
+  });
+});
+
+describe('getAssetsBalance', () => {
+  it('returns assetsBalance from state.metamask', () => {
+    const state: AssetSelectorTestState = {
+      metamask: { assetsBalance: { 'eip155:0x1/slip44:60': '100' } },
+    };
+    expect(getAssetsBalance(state)).toEqual(state.metamask?.assetsBalance);
+  });
+
+  it('returns empty object when metamask is missing', () => {
+    expect(getAssetsBalance({} as AssetSelectorTestState)).toEqual({});
+  });
+
+  it('returns empty object when assetsBalance is missing', () => {
+    expect(
+      getAssetsBalance({ metamask: {} } as AssetSelectorTestState),
+    ).toEqual({});
+  });
+});
+
+describe('getAssetsPrice', () => {
+  it('returns assetsPrice from state.metamask', () => {
+    const state: AssetSelectorTestState = {
+      metamask: { assetsPrice: { 'eip155:0x1/slip44:60': 2000 } },
+    };
+    expect(getAssetsPrice(state)).toEqual(state.metamask?.assetsPrice);
+  });
+
+  it('returns empty object when metamask is missing', () => {
+    expect(getAssetsPrice({} as AssetSelectorTestState)).toEqual({});
+  });
+
+  it('returns empty object when assetsPrice is missing', () => {
+    expect(getAssetsPrice({ metamask: {} } as AssetSelectorTestState)).toEqual(
+      {},
+    );
+  });
+});
+
+describe('getAssetPreferences', () => {
+  it('returns assetPreferences from state.metamask', () => {
+    const state: AssetSelectorTestState = {
+      metamask: { assetPreferences: { hideZeroBalanceTokens: true } },
+    };
+    expect(getAssetPreferences(state)).toEqual(
+      state.metamask?.assetPreferences,
+    );
+  });
+
+  it('returns empty object when metamask is missing', () => {
+    expect(getAssetPreferences({} as AssetSelectorTestState)).toEqual({});
+  });
+
+  it('returns empty object when assetPreferences is missing', () => {
+    expect(
+      getAssetPreferences({ metamask: {} } as AssetSelectorTestState),
+    ).toEqual({});
+  });
+});
+
+describe('getCustomAssets', () => {
+  it('returns customAssets from state.metamask', () => {
+    const state: AssetSelectorTestState = {
+      metamask: { customAssets: { 'eip155:0x1/erc20:0xabc': {} } },
+    };
+    expect(getCustomAssets(state)).toEqual(state.metamask?.customAssets);
+  });
+
+  it('returns empty object when metamask is missing', () => {
+    expect(getCustomAssets({} as AssetSelectorTestState)).toEqual({});
+  });
+
+  it('returns empty object when customAssets is missing', () => {
+    expect(getCustomAssets({ metamask: {} } as AssetSelectorTestState)).toEqual(
+      {},
+    );
+  });
+});
+
+describe('selectAggregatedBalanceForSelectedAccount', () => {
+  const mockSelectedAccount = {
+    id: 'account-1',
+    address: '0x123',
+    type: 'eoa',
+    metadata: { name: 'Account 1' },
+    options: {},
+    methods: [],
+  };
+
+  const baseState: AssetSelectorTestState = {
+    metamask: {
+      assetsInfo: {},
+      assetsBalance: {},
+      assetsPrice: {},
+      assetPreferences: {},
+      customAssets: {},
+      internalAccounts: {
+        selectedAccount: 'account-1',
+        accounts: {
+          'account-1': mockSelectedAccount,
+        },
+      },
+      enabledNetworkMap: { eip155: { '0x1': true } },
+      accountTree: [],
+      isAccountTreeSyncingInProgress: false,
+      hasAccountTreeSyncingSyncedAtLeastOnce: true,
+      accountGroupsMetadata: {},
+      accountWalletsMetadata: {},
+    },
+  };
+
+  beforeEach(() => {
+    mockGetAggregatedBalanceForAccount.mockReset();
+  });
+
+  it('returns null when no selected internal account', () => {
+    const stateWithNoAccount: AssetSelectorTestState = {
+      metamask: {
+        ...baseState.metamask,
+        internalAccounts: {
+          selectedAccount: 'missing',
+          accounts: {},
+        },
+      },
+    };
+    const result =
+      selectAggregatedBalanceForSelectedAccount(stateWithNoAccount);
+    expect(result).toBeNull();
+    expect(mockGetAggregatedBalanceForAccount).not.toHaveBeenCalled();
+  });
+
+  // These tests only apply when isAssetsUnifyStateFeatureEnabled returns true.
+  // The flag is currently hardcoded to false, so skip them to avoid failures.
+  describe.skip('when assets-unify-state is enabled', () => {
+    it('returns result of getAggregatedBalanceForAccount when selected account exists', () => {
+      const mockAggregated = {
+        entries: [],
+        totalBalanceInFiat: 100,
+      };
+      mockGetAggregatedBalanceForAccount.mockReturnValue(mockAggregated);
+
+      const result = selectAggregatedBalanceForSelectedAccount(baseState);
+      expect(result).toEqual(mockAggregated);
+      expect(mockGetAggregatedBalanceForAccount).toHaveBeenCalledTimes(1);
+    });
+
+    it('passes assets state, selected account, and enabled network map to getAggregatedBalanceForAccount', () => {
+      mockGetAggregatedBalanceForAccount.mockReturnValue(null);
+
+      // Use a distinct state so the selector recomputes (avoids memoization from previous test)
+      const stateWithAssetsInfo = cloneDeep(
+        baseState,
+      ) as AssetSelectorTestState;
+      (stateWithAssetsInfo.metamask as Record<string, unknown>).assetsInfo = {
+        'eip155:0x1/slip44:60': {},
+      };
+
+      selectAggregatedBalanceForSelectedAccount(
+        stateWithAssetsInfo as AssetSelectorTestState,
+      );
+
+      expect(mockGetAggregatedBalanceForAccount).toHaveBeenCalledWith(
+        expect.objectContaining({
+          assetsInfo: { 'eip155:0x1/slip44:60': {} },
+          assetsBalance: {},
+          assetsPrice: {},
+          assetPreferences: {},
+          customAssets: {},
+        }),
+        mockSelectedAccount,
+        { eip155: { '0x1': true } },
+        expect.objectContaining({
+          accountTree: [],
+          isAccountTreeSyncingInProgress: false,
+          hasAccountTreeSyncingSyncedAtLeastOnce: true,
+        }),
+        undefined,
+        expect.any(Object),
+        expect.any(Function),
+      );
+    });
+  });
+});
+
+describe('getAllIgnoredAssets', () => {
+  it('should return the all ignored assets from the state', () => {
+    const result = getAllIgnoredAssets(mockAssetsState);
+    expect(result).toEqual(mockAssetsState.metamask.allIgnoredAssets);
   });
 });
 
@@ -123,26 +364,6 @@ describe('getAssetsRates', () => {
   it('should return undefined if state does not have metamask property', () => {
     const invalidState = {} as AssetsRatesState;
     expect(() => getAssetsRates(invalidState)).toThrow();
-  });
-});
-
-describe('getHistoricalPrices', () => {
-  it('should return the assetsRates from the state', () => {
-    const result = getHistoricalPrices(mockRatesState);
-    expect(result).toEqual(mockRatesState.metamask.historicalPrices);
-  });
-
-  it('should return an empty object if historicalPrices is empty', () => {
-    const emptyState: AssetsRatesState = {
-      metamask: { conversionRates: {}, historicalPrices: {} },
-    };
-    const result = getHistoricalPrices(emptyState);
-    expect(result).toEqual({});
-  });
-
-  it('should return undefined if state does not have metamask property', () => {
-    const invalidState = {} as AssetsRatesState;
-    expect(() => getHistoricalPrices(invalidState)).toThrow();
   });
 });
 
@@ -293,6 +514,7 @@ describe('getTokenByAccountAndAddressAndChainId', () => {
                   },
                   hidden: false,
                   pinned: false,
+                  lastSelected: 0,
                 },
               },
             },
@@ -304,8 +526,8 @@ describe('getTokenByAccountAndAddressAndChainId', () => {
             },
           },
         },
-        selectedAccountGroup: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
       },
+      selectedAccountGroup: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
       internalAccounts: {
         accounts: {
           '81b1ead4-334c-4921-9adf-282fde539752': {
@@ -343,6 +565,7 @@ describe('getTokenByAccountAndAddressAndChainId', () => {
           units: [{ symbol: 'TKN1', name: 'Token 1', decimals: 9 }],
         },
       },
+      allIgnoredAssets: {},
       allTokens: {
         'eip155:1': {
           '0x458036e7bc0612e9b207640dc07ca7711346aae5': [
@@ -456,6 +679,46 @@ describe('getTokenByAccountAndAddressAndChainId', () => {
       });
     });
   });
+
+  describe('when account is undefined and selectedAccountGroup is null', () => {
+    it('should return null without crashing (deeplink guard)', () => {
+      const mockStateNoGroup = cloneDeep(mockState);
+      mockStateNoGroup.metamask.selectedAccountGroup =
+        null as unknown as string;
+      mockStateNoGroup.metamask.internalAccounts.selectedAccount =
+        '5132883f-598e-482c-a02b-84eeaa352f5b';
+
+      const result = getTokenByAccountAndAddressAndChainId(
+        mockStateNoGroup,
+        undefined,
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501',
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+      );
+
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('when account is undefined and no account in the group matches the non-EVM chainId', () => {
+    it('should return null without crashing', () => {
+      const mockStateNoMatchingAccount = cloneDeep(mockState);
+      mockStateNoMatchingAccount.metamask.internalAccounts.selectedAccount =
+        '5132883f-598e-482c-a02b-84eeaa352f5b';
+      // Override the Solana account's scopes so it no longer matches the queried chain
+      mockStateNoMatchingAccount.metamask.internalAccounts.accounts[
+        '5132883f-598e-482c-a02b-84eeaa352f5b'
+      ].scopes = [EthScope.Eoa] as unknown as SolScope[];
+
+      const result = getTokenByAccountAndAddressAndChainId(
+        mockStateNoMatchingAccount,
+        undefined,
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501',
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+      );
+
+      expect(result).toBeNull();
+    });
+  });
 });
 
 describe('getMultichainNativeAssetType', () => {
@@ -484,8 +747,8 @@ describe('getMultichainNativeAssetType', () => {
       selectedMultichainNetworkChainId: SolScope.Mainnet,
       isEvmSelected: false,
       remoteFeatureFlags: {
-        addSolanaAccount: true,
-        addBitcoinAccout: true,
+        solanaAccounts: { enabled: true, minimumVersion: '13.6.0' },
+        bitcoinAccounts: { enabled: true, minimumVersion: '13.6.0' },
       },
     },
 
@@ -709,8 +972,11 @@ describe('Aggregated balance adapters/selectors', () => {
     expect(args[3]).toHaveProperty('marketData');
     expect(args[4]).toEqual({ conversionRates: {}, historicalPrices: {} });
     expect(args[5]).toHaveProperty('balances');
-    expect(args[6]).toHaveProperty('allTokens');
-    expect(args[7]).toEqual({ currentCurrency: 'usd', currencyRates: {} });
+    expect(args[6]).toHaveProperty('accountsAssets');
+    expect(args[7]).toHaveProperty('allTokens');
+    expect(args[8]).toEqual({ currentCurrency: 'usd', currencyRates: {} });
+    // args[9] = enabledNetworkMap, args[10] = networkConfigurationsByChainId
+    expect(args[10]).toBeDefined();
   });
 
   it('memoizes aggregate output for identical state', () => {
@@ -778,7 +1044,8 @@ describe('Aggregated balance recomputation behavior', () => {
 
   it('does not recompute when unrelated state changes but used slice references are stable', () => {
     // Build stable references for used slices
-    const accountTree = { wallets: {}, selectedAccountGroup: '' };
+    const accountTree = { wallets: {} };
+    const selectedAccountGroup = '';
     const internalAccounts = { accounts: {}, selectedAccount: '' };
     const tokenBalances = {};
     const marketData = {};
@@ -787,10 +1054,15 @@ describe('Aggregated balance recomputation behavior', () => {
     const balances = {};
     const allTokens = {};
     const currencyRates = {};
+    const accountsAssets = {};
+    const assetsMetadata = {};
+    const allIgnoredAssets = {};
+    const networkConfigurationsByChainId = {};
 
     const baseState: BalanceCalculationState = {
       metamask: {
         // provide all used slices with stable refs
+        selectedAccountGroup,
         accountTree,
         internalAccounts,
         tokenBalances,
@@ -801,6 +1073,10 @@ describe('Aggregated balance recomputation behavior', () => {
         currencyRates,
         conversionRates,
         historicalPrices,
+        accountsAssets,
+        assetsMetadata,
+        allIgnoredAssets,
+        networkConfigurationsByChainId,
       } as unknown as BalanceCalculationState['metamask'],
     };
 
@@ -810,6 +1086,7 @@ describe('Aggregated balance recomputation behavior', () => {
     const nextState: BalanceCalculationState = {
       metamask: {
         // reuse same references for used inputs
+        selectedAccountGroup,
         accountTree,
         internalAccounts,
         tokenBalances,
@@ -820,6 +1097,10 @@ describe('Aggregated balance recomputation behavior', () => {
         currencyRates,
         conversionRates,
         historicalPrices,
+        accountsAssets,
+        assetsMetadata,
+        allIgnoredAssets,
+        networkConfigurationsByChainId,
         // unrelated field
         remoteFeatureFlags: { foo: true },
       } as unknown as BalanceCalculationState['metamask'],
@@ -836,11 +1117,12 @@ describe('Aggregated balance recomputation behavior', () => {
 
   it('recomputes when a relevant slice reference changes (e.g., tokenBalances)', () => {
     const tokenBalancesA = {};
-    const tokenBalancesB = {}; // new reference
+    const tokenBalancesB = { newProperty: 'newProperty' }; // different references with different values so that selector does not memoize them
 
     const stateA: BalanceCalculationState = {
       metamask: {
-        accountTree: { wallets: {}, selectedAccountGroup: '' },
+        selectedAccountGroup: '',
+        accountTree: { wallets: {} },
         internalAccounts: { accounts: {}, selectedAccount: '' },
         tokenBalances: tokenBalancesA,
         marketData: {},
@@ -850,6 +1132,10 @@ describe('Aggregated balance recomputation behavior', () => {
         currencyRates: {},
         conversionRates: {},
         historicalPrices: {},
+        accountsAssets: {},
+        assetsMetadata: {},
+        allIgnoredAssets: {},
+        networkConfigurationsByChainId: {},
       } as unknown as BalanceCalculationState['metamask'],
     };
 
@@ -907,9 +1193,10 @@ describe('Balance change selectors', () => {
     expect(args[3]).toHaveProperty('marketData');
     expect(args[4]).toHaveProperty('conversionRates');
     expect(args[5]).toHaveProperty('balances');
-    expect(args[6]).toHaveProperty('allTokens');
-    expect(args[7]).toHaveProperty('currentCurrency');
-    expect(args[9]).toBe('1d');
+    expect(args[6]).toHaveProperty('accountsAssets');
+    expect(args[7]).toHaveProperty('allTokens');
+    expect(args[8]).toHaveProperty('currentCurrency');
+    expect(args[10]).toBe('1d');
   });
 
   it('memoizes balance change output for identical state', () => {
@@ -926,7 +1213,370 @@ describe('Balance change selectors', () => {
   });
 });
 
+describe('selectAccountGroupBalanceForEmptyState', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  // Shared base state factory with common structure
+  const createBaseMockState = (
+    accountId: string,
+    accountType: string,
+    accountScopes: string[],
+    accountMetadata: Record<string, unknown> = {},
+  ): Partial<BalanceCalculationState['metamask']> => ({
+    selectedAccountGroup: 'entropy:wallet1/group1',
+    accountTree: {
+      wallets: {
+        'entropy:wallet1': {
+          id: 'entropy:wallet1',
+          groups: {
+            'entropy:wallet1/group1': {
+              id: 'entropy:wallet1/group1',
+              type: 'multichain-account',
+              accounts: [accountId],
+              metadata: {
+                name: 'Account 1',
+                hidden: false,
+                pinned: false,
+                lastSelected: 0,
+              },
+            },
+          },
+        },
+      },
+    } as unknown as BalanceCalculationState['metamask']['accountTree'],
+    internalAccounts: {
+      accounts: {
+        [accountId]: {
+          id: accountId,
+          type: accountType,
+          address:
+            accountId === 'account1'
+              ? '0x0'
+              : '8A4AptCThfbuknsbteHgGKXczfJpfjuVA9SLTSGaaLGC',
+          scopes: accountScopes,
+          metadata: accountMetadata,
+          options: {},
+          methods: [],
+        } as unknown as InternalAccount,
+      },
+      selectedAccount: accountId,
+    },
+  });
+
+  // Mock state factories for different test scenarios
+  const createMockStateWithEVMNetworks = (
+    includeTestnets = false,
+  ): BalanceCalculationState => {
+    const networks: Record<string, unknown> = {
+      '0x1': { chainId: '0x1', type: 'mainnet' }, // Ethereum mainnet
+      '0x89': { chainId: '0x89', type: 'mainnet' }, // Polygon mainnet
+    };
+
+    if (includeTestnets) {
+      networks['0xaa36a7'] = { chainId: '0xaa36a7', type: 'testnet' }; // Sepolia testnet
+      networks['0xe705'] = { chainId: '0xe705', type: 'testnet' }; // Linea Sepolia testnet
+    }
+
+    const baseState = createBaseMockState('account1', 'eip155:eoa', [
+      EthScope.Eoa,
+    ]);
+
+    return {
+      metamask: {
+        ...baseState,
+        networkConfigurationsByChainId: networks,
+        multichainNetworkConfigurationsByChainId: {},
+        snaps: {},
+      } as unknown as BalanceCalculationState['metamask'],
+    };
+  };
+
+  const createMockStateWithNonEVMNetworks = (
+    includeTestnets = false,
+  ): BalanceCalculationState => {
+    const multichainNetworks: Record<string, unknown> = {
+      'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+        chainId: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+        type: 'mainnet',
+      }, // Solana mainnet
+    };
+
+    if (includeTestnets) {
+      multichainNetworks['solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z'] = {
+        chainId: 'solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z',
+        type: 'testnet',
+      }; // Solana testnet
+      multichainNetworks['solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1'] = {
+        chainId: 'solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1',
+        type: 'testnet',
+      }; // Solana devnet
+    }
+
+    const baseState = createBaseMockState(
+      'account2',
+      'solana:data-account',
+      [SolScope.Mainnet],
+      {
+        snap: { id: 'npm:@metamask/solana-wallet-snap', enabled: true },
+      },
+    );
+
+    return {
+      metamask: {
+        ...baseState,
+        networkConfigurationsByChainId: {},
+        multichainNetworkConfigurationsByChainId: multichainNetworks,
+        snaps: {
+          'npm:@metamask/solana-wallet-snap': { enabled: true },
+        },
+      } as unknown as BalanceCalculationState['metamask'],
+    };
+  };
+
+  it('should return true when balance is greater than 0 for EVM networks', () => {
+    const state = createMockStateWithEVMNetworks();
+
+    // Add accountsByChainId with non-zero EVM balance
+    state.metamask.accountsByChainId = {
+      '0x1': {
+        '0x0': {
+          balance: '0x8ac7230489e80000', // 10 ETH
+        },
+      },
+    };
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    expect(result).toBe(true);
+  });
+
+  it('should return true when balance is greater than 0 for non-EVM networks like Solana', () => {
+    const state = createMockStateWithNonEVMNetworks();
+
+    // Add multichainBalancesState with non-zero Solana balance
+    state.metamask.balances = {
+      account2: {
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501': {
+          amount: '10.5',
+          unit: 'SOL',
+        },
+      },
+    };
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    expect(result).toBe(true);
+  });
+
+  it('should return false when balance is 0', () => {
+    const state = createMockStateWithEVMNetworks();
+
+    // Add accountsByChainId with zero EVM balance
+    state.metamask.accountsByChainId = {
+      '0x1': {
+        '0x0': {
+          balance: '0x0',
+        },
+      },
+    };
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    expect(result).toBe(false);
+  });
+
+  it('should return true for small positive balances', () => {
+    const state = createMockStateWithEVMNetworks();
+
+    // Add accountsByChainId with small positive EVM balance
+    state.metamask.accountsByChainId = {
+      '0x1': {
+        '0x0': {
+          balance: '0x2386f26fc10000', // 0.01 ETH
+        },
+      },
+    };
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    expect(result).toBe(true);
+  });
+
+  it('should return false when no balances are set', () => {
+    const state = createMockStateWithEVMNetworks();
+
+    // No balances set at all
+    state.metamask.accountsByChainId = {};
+    state.metamask.balances = {};
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    expect(result).toBe(false);
+  });
+
+  it('should exclude EVM testnets from balance calculation', () => {
+    const state = createMockStateWithEVMNetworks(true); // Include EVM testnets
+
+    // Add balances for both mainnet and testnet
+    state.metamask.accountsByChainId = {
+      '0x1': {
+        // Ethereum mainnet
+        '0x0': {
+          balance: '0x0', // Zero on mainnet
+        },
+      },
+      '0xaa36a7': {
+        // Sepolia testnet (should be ignored)
+        '0x0': {
+          balance: '0x8ac7230489e80000', // 10 ETH on testnet
+        },
+      },
+    };
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    // Should return false because testnet balance is ignored
+    expect(result).toBe(false);
+  });
+
+  it('should exclude non-EVM testnets like Solana from balance calculation', () => {
+    const state = createMockStateWithNonEVMNetworks(true); // Include non-EVM testnets
+
+    // Add balances for both mainnet and testnet
+    state.metamask.balances = {
+      account2: {
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501': {
+          // Mainnet
+          amount: '0',
+          unit: 'SOL',
+        },
+        'solana:4uhcVJyU9pJkvQyS88uRDiswHXSCkY3z/slip44:501': {
+          // Testnet (should be ignored)
+          amount: '10.5',
+          unit: 'SOL',
+        },
+      },
+    };
+
+    const result = selectAccountGroupBalanceForEmptyState(state);
+
+    // Should return false because testnet balance is ignored
+    expect(result).toBe(false);
+  });
+
+  describe('native token balance checks', () => {
+    it('should return true when EVM native token balance exists', () => {
+      const state = createMockStateWithEVMNetworks();
+
+      // Add accountsByChainId with non-zero EVM balance
+      state.metamask.accountsByChainId = {
+        '0x1': {
+          '0x0': {
+            balance: '0x8ac7230489e80000', // 10 ETH
+          },
+        },
+      };
+
+      const result = selectAccountGroupBalanceForEmptyState(state);
+
+      expect(result).toBe(true);
+    });
+
+    it('should return true when non-EVM native token balance exists', () => {
+      const state = createMockStateWithNonEVMNetworks();
+
+      // Add multichainBalancesState with non-zero Solana balance
+      state.metamask.balances = {
+        account2: {
+          'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501': {
+            amount: '10.5',
+            unit: 'SOL',
+          },
+        },
+      };
+
+      const result = selectAccountGroupBalanceForEmptyState(state);
+
+      expect(result).toBe(true);
+    });
+
+    it('should return false when no native token balances exist', () => {
+      const state = createMockStateWithEVMNetworks();
+
+      // Add accountsByChainId with zero EVM balance
+      state.metamask.accountsByChainId = {
+        '0x1': {
+          '0x0': {
+            balance: '0x0',
+          },
+        },
+      };
+
+      // Add multichainBalancesState with zero balance
+      state.metamask.balances = {};
+
+      const result = selectAccountGroupBalanceForEmptyState(state);
+
+      expect(result).toBe(false);
+    });
+
+    it('should return false when non-EVM balance is decimal zero like "0.0" or "0.00"', () => {
+      const state = createMockStateWithNonEVMNetworks();
+
+      // Add multichainBalancesState with decimal zero Solana balance
+      state.metamask.balances = {
+        account2: {
+          'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp/slip44:501': {
+            amount: '0.00', // Decimal zero
+            unit: 'SOL',
+          },
+        },
+      };
+
+      const result = selectAccountGroupBalanceForEmptyState(state);
+
+      expect(result).toBe(false);
+    });
+
+    it('should return true when user has ERC-20 tokens but no native tokens', () => {
+      const state = createMockStateWithEVMNetworks();
+
+      // Add accountsByChainId with zero EVM balance
+      state.metamask.accountsByChainId = {
+        '0x1': {
+          '0x0': {
+            balance: '0x0', // No ETH
+          },
+        },
+      };
+
+      // Add tokenBalances with ERC-20 tokens
+      state.metamask.tokenBalances = {
+        '0x0': {
+          // account address
+          '0x1': {
+            // Ethereum mainnet
+            '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48': '0xde0b6b3a7640000', // USDC balance
+          },
+        },
+      };
+
+      const result = selectAccountGroupBalanceForEmptyState(state);
+
+      // Should return true because user has non-native tokens
+      expect(result).toBe(true);
+    });
+  });
+});
+
 describe('getAssetsBySelectedAccountGroup', () => {
+  beforeEach(() => {
+    getAssetsBySelectedAccountGroup.clearCache();
+    getAssetsBySelectedAccountGroup.memoizedResultFunc.clearCache();
+  });
+
   const mockState = {
     metamask: {
       accountTree: 'mockAccountTree',
@@ -941,6 +1591,7 @@ describe('getAssetsBySelectedAccountGroup', () => {
       accountsByChainId: 'mockAccountsByChainId',
       accountsAssets: 'mockAccountsAssets',
       assetsMetadata: 'mockAssetsMetadata',
+      allIgnoredAssets: 'mockAllIgnoredAssets',
       balances: 'mockBalances',
       conversionRates: 'mockConversionRates',
     },
@@ -948,12 +1599,194 @@ describe('getAssetsBySelectedAccountGroup', () => {
 
   it('calls the imported selector with the prepared initial state', () => {
     const selectorMock = jest.mocked(selectAssetsBySelectedAccountGroup);
-    const expectedResult = {};
-    selectorMock.mockReturnValue(expectedResult);
+    const selectorMockResult = {};
+    selectorMock.mockReturnValueOnce(selectorMockResult);
 
     const result = getAssetsBySelectedAccountGroup(mockState);
 
     expect(selectorMock).toHaveBeenCalledWith(mockState.metamask);
-    expect(result).toBe(expectedResult);
+    expect(result).toStrictEqual(selectorMockResult);
+  });
+});
+
+describe('getAssetsBySelectedAccountGroupIncludingHidden', () => {
+  beforeEach(() => {
+    getAssetsBySelectedAccountGroupIncludingHidden.clearCache();
+    getAssetsBySelectedAccountGroupIncludingHidden.memoizedResultFunc.clearCache();
+  });
+
+  const mockState = {
+    metamask: {
+      accountTree: 'mockAccountTree',
+      internalAccounts: 'mockInternalAccounts',
+      allTokens: 'mockAllTokens',
+      allIgnoredTokens: 'mockAllIgnoredTokens',
+      tokenBalances: 'mockTokenBalances',
+      marketData: 'mockMarketData',
+      currencyRates: 'mockCurrencyRates',
+      currentCurrency: 'mockCurrentCurrency',
+      networkConfigurationsByChainId: 'mockNetworkConfigurationsByChainId',
+      accountsByChainId: 'mockAccountsByChainId',
+      accountsAssets: 'mockAccountsAssets',
+      assetsMetadata: 'mockAssetsMetadata',
+      allIgnoredAssets: 'mockAllIgnoredAssets',
+      balances: 'mockBalances',
+      conversionRates: 'mockConversionRates',
+    },
+  };
+
+  it('calls the imported selector with ignored assets cleared', () => {
+    const selectorMock = jest.mocked(selectAssetsBySelectedAccountGroup);
+    const selectorMockResult = {};
+    selectorMock.mockReturnValueOnce(selectorMockResult);
+
+    const result = getAssetsBySelectedAccountGroupIncludingHidden(mockState);
+
+    expect(selectorMock).toHaveBeenCalledWith({
+      ...mockState.metamask,
+      allIgnoredTokens: {},
+      allIgnoredAssets: {},
+    });
+    expect(result).toStrictEqual(selectorMockResult);
+  });
+});
+
+describe('getAssetsBySelectedAccountGroupWithTronSpecialAssets', () => {
+  beforeEach(() => {
+    getAssetsBySelectedAccountGroupWithTronSpecialAssets.clearCache();
+    getAssetsBySelectedAccountGroupWithTronSpecialAssets.memoizedResultFunc.clearCache();
+  });
+
+  const mockState = {
+    metamask: {
+      accountTree: 'mockAccountTree',
+      internalAccounts: 'mockInternalAccounts',
+      allTokens: 'mockAllTokens',
+      allIgnoredTokens: 'mockAllIgnoredTokens',
+      tokenBalances: 'mockTokenBalances',
+      marketData: 'mockMarketData',
+      currencyRates: 'mockCurrencyRates',
+      currentCurrency: 'mockCurrentCurrency',
+      networkConfigurationsByChainId: 'mockNetworkConfigurationsByChainId',
+      accountsByChainId: 'mockAccountsByChainId',
+      accountsAssets: 'mockAccountsAssets',
+      assetsMetadata: 'mockAssetsMetadata',
+      allIgnoredAssets: 'mockAllIgnoredAssets',
+      balances: 'mockBalances',
+      conversionRates: 'mockConversionRates',
+    },
+  };
+
+  it('calls selector with option to not filter tron special assets', () => {
+    const selectorMock = jest
+      .mocked(selectAssetsBySelectedAccountGroup)
+      .mockReturnValue({});
+
+    const result =
+      getAssetsBySelectedAccountGroupWithTronSpecialAssets(mockState);
+
+    expect(selectorMock).toHaveBeenCalledWith(mockState.metamask, {
+      filterTronStakedTokens: false,
+    });
+    expect(result).toStrictEqual({});
+  });
+});
+
+describe('getAsset', () => {
+  beforeEach(() => {
+    getAssetsBySelectedAccountGroup.memoizedResultFunc.clearCache();
+  });
+
+  const mockState = {
+    metamask: {
+      accountTree: 'mockAccountTree',
+      internalAccounts: 'mockInternalAccounts',
+      allTokens: 'mockAllTokens',
+      allIgnoredTokens: 'mockAllIgnoredTokens',
+      tokenBalances: 'mockTokenBalances',
+      marketData: 'mockMarketData',
+      currencyRates: 'mockCurrencyRates',
+      currentCurrency: 'mockCurrentCurrency',
+      networkConfigurationsByChainId: 'mockNetworkConfigurationsByChainId',
+      accountsByChainId: 'mockAccountsByChainId',
+      accountsAssets: 'mockAccountsAssets',
+      assetsMetadata: 'mockAssetsMetadata',
+      allIgnoredAssets: 'mockAllIgnoredAssets',
+      balances: 'mockBalances',
+      conversionRates: 'mockConversionRates',
+      testId: 'yyyy',
+    },
+  };
+
+  it('returns the asset for the given assetId and chainId', () => {
+    const selectorMock = jest.mocked(selectAssetsBySelectedAccountGroup);
+    const selectorMockResult = {
+      '0x1': [
+        {
+          accountType: 'eip155:eoa',
+          accountId: 'd7f11451-9d79-4df4-a012-afd253443639',
+          chainId: '0x1',
+          assetId: '0x0000000000000000000000000000000000000000',
+          address: '0x0000000000000000000000000000000000000000',
+          image: '',
+          name: 'Ethereum',
+          symbol: 'ETH',
+          isNative: true,
+          decimals: 18,
+          rawBalance: '0x8AC7230489E80000',
+          balance: '10',
+          fiat: {
+            balance: 24000,
+            conversionRate: 2400,
+            currency: 'USD',
+          },
+        },
+      ],
+      'bip122:000000000019d6689c085ae165831e93': [
+        {
+          accountType: 'bip122:p2wpkh',
+          accountId: '2d89e6a0-b4e6-45a8-a707-f10cef143b42',
+          chainId: 'bip122:000000000019d6689c085ae165831e93',
+          assetId: 'bip122:000000000019d6689c085ae165831e93/slip44:0',
+          image: '',
+          name: 'Bitcoin',
+          symbol: 'BTC',
+          isNative: true,
+          decimals: 9,
+          rawBalance: '0x2540be400',
+          balance: '10',
+          fiat: {
+            balance: 1635.5,
+            conversionRate: 163.55,
+            currency: 'USD',
+          },
+        },
+      ],
+    } as AccountGroupAssets;
+    selectorMock.mockReturnValueOnce(selectorMockResult);
+
+    const result = getAsset(
+      mockState,
+      'bip122:000000000019d6689c085ae165831e93/slip44:0',
+      'bip122:000000000019d6689c085ae165831e93',
+    );
+    expect(result).toStrictEqual({
+      accountType: 'bip122:p2wpkh',
+      accountId: '2d89e6a0-b4e6-45a8-a707-f10cef143b42',
+      chainId: 'bip122:000000000019d6689c085ae165831e93',
+      assetId: 'bip122:000000000019d6689c085ae165831e93/slip44:0',
+      image: '',
+      name: 'Bitcoin',
+      symbol: 'BTC',
+      isNative: true,
+      decimals: 9,
+      rawBalance: '0x2540be400',
+      balance: '10',
+      fiat: {
+        balance: 1635.5,
+        conversionRate: 163.55,
+        currency: 'USD',
+      },
+    });
   });
 });

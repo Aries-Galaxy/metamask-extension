@@ -139,7 +139,6 @@ describe('App State', () => {
 
     expect(state.isLoading).toStrictEqual(false);
     expect(state.warning).toBeNull();
-    expect(state.scrollToBottom).toStrictEqual(false);
   });
 
   it('shows confirm tx page', () => {
@@ -360,17 +359,6 @@ describe('App State', () => {
     expect(state.errorInSettings).toBeNull();
   });
 
-  it('toggles account menu', () => {
-    const state = reduceApp(
-      {},
-      {
-        type: actionConstants.TOGGLE_ACCOUNT_MENU,
-      },
-    );
-
-    expect(state.isAccountMenuOpen).toStrictEqual(true);
-  });
-
   it('toggles network menu', () => {
     const state = reduceApp(
       {},
@@ -380,17 +368,6 @@ describe('App State', () => {
     );
 
     expect(state.isNetworkMenuOpen).toStrictEqual(true);
-  });
-
-  it('close welcome screen', () => {
-    const state = reduceApp(
-      {},
-      {
-        type: actionConstants.CLOSE_WELCOME_SCREEN,
-      },
-    );
-
-    expect(state.welcomeScreenSeen).toStrictEqual(true);
   });
 
   it('sets pending tokens', () => {

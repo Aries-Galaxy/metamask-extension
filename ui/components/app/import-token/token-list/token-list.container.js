@@ -1,15 +1,16 @@
 import { connect } from 'react-redux';
-import { getSelectedInternalAccount } from '../../../../selectors';
+import {
+  getTokensControllerAllTokens,
+  getMultiChainAssetsControllerAccountsAssets,
+} from '../../../../../shared/lib/selectors/assets-migration';
 import TokenList from './token-list.component';
 
 const mapStateToProps = (state) => {
-  const { tokens } = state.metamask;
-  const { allTokens } = state.metamask;
-  const { address } = getSelectedInternalAccount(state);
+  const allTokens = getTokensControllerAllTokens(state);
+  const accountsAssets = getMultiChainAssetsControllerAccountsAssets(state);
   return {
-    tokens,
     allTokens,
-    accountAddress: address,
+    accountsAssets,
   };
 };
 

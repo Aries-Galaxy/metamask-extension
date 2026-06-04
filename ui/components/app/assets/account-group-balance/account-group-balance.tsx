@@ -1,47 +1,57 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import classnames from 'classnames';
-import { selectBalanceBySelectedAccountGroup } from '../../../../selectors/assets';
-
-import {
-  AlignItems,
-  Display,
-  FlexWrap,
-  IconColor,
-  JustifyContent,
-  TextVariant,
-} from '../../../../helpers/constants/design-system';
+import classnames from 'clsx';
+import { formatChainIdToCaip } from '@metamask/bridge-controller';
+import { CaipChainId, Hex, isCaipChainId } from '@metamask/utils';
 import {
   Box,
-  ButtonIcon,
-  ButtonIconSize,
-  SensitiveText,
-  IconName,
-} from '../../../component-library';
+  BoxAlignItems,
+  BoxFlexDirection,
+  BoxFlexWrap,
+  Skeleton,
+} from '@metamask/design-system-react';
 import {
-  getPreferences,
+  getMultichainNativeTokenBalance,
+  selectBalanceBySelectedAccountGroup,
+} from '../../../../selectors/assets';
+
+import { TextVariant } from '../../../../helpers/constants/design-system';
+import { SensitiveText } from '../../../component-library';
+import {
+  getEnabledNetworksByNamespace,
+  getMultichainNetwork,
+  getShowFiatInTestnets,
   selectAnyEnabledNetworksAreAvailable,
 } from '../../../../selectors';
+import { getPreferences } from '../../../../../shared/lib/selectors/preferences';
 import { useFormatters } from '../../../../hooks/useFormatters';
 import { getCurrentCurrency } from '../../../../ducks/metamask/metamask';
-import { useI18nContext } from '../../../../hooks/useI18nContext';
-import { Skeleton } from '../../../component-library/skeleton';
 import { isZeroAmount } from '../../../../helpers/utils/number-utils';
+import { getInternalAccountBySelectedAccountGroupAndCaip } from '../../../../selectors/multichain-accounts/account-tree';
+import { isEvmChainId } from '../../../../../shared/lib/asset-utils';
+import { hexWEIToDecETH } from '../../../../../shared/lib/conversion.utils';
+import { TEST_CHAINS } from '../../../../../shared/constants/network';
+import { getNetworkConfigurationsByChainId } from '../../../../../shared/lib/selectors/networks';
 
-type AccountGroupBalanceProps = {
+export type AccountGroupBalanceProps = {
   classPrefix: string;
   balanceIsCached: boolean;
   handleSensitiveToggle: () => void;
+  balance: string;
+  chainId: CaipChainId | Hex;
 };
 
-export const AccountGroupBalance: React.FC<AccountGroupBalanceProps> = ({
+export const AccountGroupBalance = ({
   classPrefix,
   balanceIsCached,
   handleSensitiveToggle,
-}) => {
-  const { privacyMode } = useSelector(getPreferences);
-  const { formatCurrency } = useFormatters();
-  const t = useI18nContext();
+  balance,
+  chainId,
+}: AccountGroupBalanceProps) => {
+  const { privacyMode, showNativeTokenAsMainBalance } =
+    useSelector(getPreferences);
+  const enabledNetworks = useSelector(getEnabledNetworksByNamespace);
+  const { formatCurrency, formatTokenQuantity } = useFormatters();
 
   const selectedGroupBalance = useSelector(selectBalanceBySelectedAccountGroup);
   const fallbackCurrency = useSelector(getCurrentCurrency);
@@ -49,48 +59,131 @@ export const AccountGroupBalance: React.FC<AccountGroupBalanceProps> = ({
     selectAnyEnabledNetworksAreAvailable,
   );
 
+  const caipChainId = isCaipChainId(chainId)
+    ? chainId
+    : formatChainIdToCaip(chainId);
+  const selectedAccount = useSelector((state) =>
+    getInternalAccountBySelectedAccountGroupAndCaip(state, caipChainId),
+  );
+
+  const multichainNativeTokenBalance = useSelector((state) =>
+    getMultichainNativeTokenBalance(state, selectedAccount),
+  );
+
+  const isEvm = isEvmChainId(chainId);
+
+  const isTestnetSelected = Boolean(
+    Object.keys(enabledNetworks).length === 1 &&
+    TEST_CHAINS.includes(Object.keys(enabledNetworks)[0] as `0x${string}`),
+  );
+
+  const networkConfigurationsByChainId = useSelector(
+    getNetworkConfigurationsByChainId,
+  );
+  const networks = useSelector(getMultichainNetwork);
+  const showNativeTokenAsMain = Boolean(
+    showNativeTokenAsMainBalance && Object.keys(enabledNetworks).length === 1,
+  );
+
+  const showConversionForTestnets = useSelector(getShowFiatInTestnets);
+
+  const nativeCurrencySymbol: string = useMemo(() => {
+    if (isEvm) {
+      return Object.keys(enabledNetworks).length === 1
+        ? networkConfigurationsByChainId[
+            Object.keys(enabledNetworks)[0] as `0x${string}`
+          ]?.nativeCurrency
+        : fallbackCurrency;
+    }
+
+    return Object.keys(enabledNetworks).length === 1
+      ? networks.network.ticker
+      : fallbackCurrency;
+  }, [
+    enabledNetworks,
+    networkConfigurationsByChainId,
+    isEvm,
+    networks,
+    fallbackCurrency,
+  ]);
+
   const total = selectedGroupBalance?.totalBalanceInUserCurrency;
+
+  let formattedNativeBalance = null;
+  if (showNativeTokenAsMain || isTestnetSelected) {
+    if (isEvm) {
+      const decimalBalance = parseFloat(hexWEIToDecETH(balance));
+
+      formattedNativeBalance = formatTokenQuantity(
+        decimalBalance,
+        nativeCurrencySymbol,
+      );
+    } else {
+      formattedNativeBalance = formatTokenQuantity(
+        Number(multichainNativeTokenBalance.amount),
+        nativeCurrencySymbol,
+      );
+    }
+  }
+
   const currency = selectedGroupBalance
     ? (selectedGroupBalance.userCurrency ?? fallbackCurrency)
     : undefined;
 
+  const formattedTotal = useMemo(() => {
+    if (
+      showNativeTokenAsMain ||
+      (isTestnetSelected && !showConversionForTestnets)
+    ) {
+      return formattedNativeBalance;
+    }
+    if (total === undefined) {
+      return null;
+    }
+    return formatCurrency(total, currency);
+  }, [
+    showNativeTokenAsMain,
+    isTestnetSelected,
+    total,
+    formatCurrency,
+    currency,
+    formattedNativeBalance,
+    showConversionForTestnets,
+  ]);
+
   return (
     <Skeleton
-      isLoading={
+      hideChildren={
         !anyEnabledNetworksAreAvailable &&
         (isZeroAmount(total) || currency === undefined)
       }
-      marginBottom={1}
+      className="mb-1"
+      data-testid="account-group-balance-skeleton"
     >
       <Box
-        className={classnames(`${classPrefix}-overview__primary-balance`, {
-          [`${classPrefix}-overview__cached-balance`]: balanceIsCached,
-        })}
+        className={classnames(
+          'flex',
+          `${classPrefix}-overview__primary-balance`,
+          {
+            [`${classPrefix}-overview__cached-balance`]: balanceIsCached,
+          },
+        )}
         data-testid={`${classPrefix}-overview__primary-currency`}
-        display={Display.Flex}
-        alignItems={AlignItems.center}
-        flexWrap={FlexWrap.Wrap}
+        flexDirection={BoxFlexDirection.Row}
+        alignItems={BoxAlignItems.Center}
+        flexWrap={BoxFlexWrap.Wrap}
       >
         <SensitiveText
           ellipsis
           variant={TextVariant.inherit}
           isHidden={privacyMode}
           data-testid="account-value-and-suffix"
+          onClick={handleSensitiveToggle}
+          className="cursor-pointer transition-colors duration-200 hover:text-text-alternative"
         >
           {/* We should always show something but the check is just to appease TypeScript */}
-          {total === undefined ? null : formatCurrency(total, currency)}
+          {formattedTotal}
         </SensitiveText>
-
-        <ButtonIcon
-          color={IconColor.iconAlternative}
-          marginLeft={2}
-          size={ButtonIconSize.Md}
-          onClick={handleSensitiveToggle}
-          iconName={privacyMode ? IconName.EyeSlash : IconName.Eye}
-          justifyContent={JustifyContent.center}
-          ariaLabel={t('hideSentitiveInfo')}
-          data-testid="sensitive-toggle"
-        />
       </Box>
     </Skeleton>
   );

@@ -1,7 +1,6 @@
 import { useMemo, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-// eslint-disable-next-line import/no-restricted-paths
-import { isEthAddress } from '../../../../app/scripts/lib/multichain/address';
+import { isEthAddress } from '../../../../shared/lib/multichain/address';
 import type { ExternalDestinationAccount } from '../prepare/types';
 import {
   getDomainResolutions,
@@ -12,23 +11,25 @@ import {
   isSolanaAddress,
   isBtcMainnetAddress,
   isBtcTestnetAddress,
+  isTronAddress,
 } from '../../../../shared/lib/multichain/accounts';
-import { getInternalAccountByAddress } from '../../../selectors/selectors';
-import { useI18nContext } from '../../../hooks/useI18nContext';
+import { getInternalAccountByAddress } from '../../../selectors';
+import { shortenString } from '../../../helpers/utils/util';
 
 type UseExternalAccountResolutionProps = {
   searchQuery: string;
   isDestinationSolana: boolean;
   isDestinationBitcoin?: boolean;
+  isDestinationTron?: boolean;
 };
 
 export const useExternalAccountResolution = ({
   searchQuery,
   isDestinationSolana,
   isDestinationBitcoin = false,
+  isDestinationTron = false,
 }: UseExternalAccountResolutionProps): ExternalDestinationAccount | null => {
   const dispatch = useDispatch();
-  const t = useI18nContext();
 
   const domainResolutionsFromStore = useSelector(getDomainResolutions);
 
@@ -56,17 +57,31 @@ export const useExternalAccountResolution = ({
       return null;
     }
 
+    // Check for Tron addresses
+    if (isDestinationTron) {
+      if (isTronAddress(trimmedQuery)) {
+        return trimmedQuery;
+      }
+      return null;
+    }
+
     // Default to checking for Ethereum addresses
     if (isEthAddress(trimmedQuery)) {
       return trimmedQuery;
     }
 
     return null;
-  }, [trimmedQuery, isDestinationSolana, isDestinationBitcoin]);
+  }, [
+    trimmedQuery,
+    isDestinationSolana,
+    isDestinationBitcoin,
+    isDestinationTron,
+  ]);
 
   const validEnsName =
     !isDestinationSolana &&
     !isDestinationBitcoin &&
+    !isDestinationTron &&
     trimmedQuery.endsWith('.eth')
       ? trimmedQuery
       : null;
@@ -95,7 +110,14 @@ export const useExternalAccountResolution = ({
       address: resolvedAddress,
       isExternal: true,
       type: 'any:account' as const,
-      displayName: validEnsName ?? t('externalAccount'),
+      displayName:
+        validEnsName ??
+        shortenString(resolvedAddress, {
+          truncatedCharLimit: 15,
+          truncatedStartChars: 7,
+          truncatedEndChars: 5,
+          skipCharacterInEnd: false,
+        }),
     };
   }, [validEnsName, resolvedAddress, internalAccount]);
 };

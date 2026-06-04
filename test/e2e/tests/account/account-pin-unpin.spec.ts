@@ -1,20 +1,22 @@
 import { Suite } from 'mocha';
 import { Driver } from '../../webdriver/driver';
 import { withFixtures } from '../../helpers';
-import FixtureBuilder from '../../fixture-builder';
-import { loginWithBalanceValidation } from '../../page-objects/flows/login.flow';
+import FixtureBuilderV2 from '../../fixtures/fixture-builder-v2';
+import { login } from '../../page-objects/flows/login.flow';
 import AccountListPage from '../../page-objects/pages/account-list-page';
 import HeaderNavbar from '../../page-objects/pages/header-navbar';
 
-describe('Account list - pin/unpin functionality', function (this: Suite) {
+// Pin/unpin is not available in BIP44 stage 2
+// eslint-disable-next-line
+describe.skip('Account list - pin/unpin functionality', function (this: Suite) {
   it('pin and unpin account by clicking the pin/unpin button', async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder().build(),
+        fixtures: new FixtureBuilderV2().build(),
         title: this.test?.fullTitle(),
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
         new HeaderNavbar(driver).openAccountMenu();
 
         // pin account
@@ -35,11 +37,11 @@ describe('Account list - pin/unpin functionality', function (this: Suite) {
   it('account once hidden should be unpinned and remain so even if revealed again', async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder().build(),
+        fixtures: new FixtureBuilderV2().build(),
         title: this.test?.fullTitle(),
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
         new HeaderNavbar(driver).openAccountMenu();
 
         // pin account

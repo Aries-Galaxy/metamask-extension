@@ -1,31 +1,27 @@
 import { type BalanceChangePeriod } from '@metamask/assets-controllers';
 import React from 'react';
 import { useSelector } from 'react-redux';
-import {
-  Display,
-  TextVariant,
-} from '../../../../helpers/constants/design-system';
+import { Box, BoxFlexDirection, Skeleton } from '@metamask/design-system-react';
+
+import { TextVariant } from '../../../../helpers/constants/design-system';
 import { useFormatters } from '../../../../hooks/useFormatters';
 import { getCurrentCurrency } from '../../../../ducks/metamask/metamask';
-import {
-  getIsMultichainAccountsState2Enabled,
-  selectAnyEnabledNetworksAreAvailable,
-} from '../../../../selectors';
-import { Box, SensitiveText } from '../../../component-library';
+import { selectAnyEnabledNetworksAreAvailable } from '../../../../selectors';
+import { SensitiveText } from '../../../component-library';
 import { isZeroAmount } from '../../../../helpers/utils/number-utils';
-import { Skeleton } from '../../../component-library/skeleton';
 import { useAccountGroupBalanceDisplay } from './useAccountGroupBalanceDisplay';
 
 export type AccountGroupBalanceChangeProps = {
   period: BalanceChangePeriod;
-  portfolioButton: () => JSX.Element | null;
+  trailingChild: () => JSX.Element | null;
 };
 
 const balanceAmountSpanStyle = { whiteSpace: 'pre' } as const;
 
-const AccountGroupBalanceChangeComponent: React.FC<
-  AccountGroupBalanceChangeProps
-> = ({ period, portfolioButton }) => {
+const AccountGroupBalanceChangeComponent = ({
+  period,
+  trailingChild,
+}: AccountGroupBalanceChangeProps) => {
   const { privacyMode, color, amountChange, percentChange } =
     useAccountGroupBalanceDisplay(period);
   const { formatCurrency, formatPercentWithMinThreshold } = useFormatters();
@@ -36,9 +32,11 @@ const AccountGroupBalanceChangeComponent: React.FC<
 
   return (
     <Skeleton
-      isLoading={!anyEnabledNetworksAreAvailable && isZeroAmount(amountChange)}
+      hideChildren={
+        !anyEnabledNetworksAreAvailable && isZeroAmount(amountChange)
+      }
     >
-      <Box display={Display.Flex} gap={1}>
+      <Box flexDirection={BoxFlexDirection.Row} gap={1} className="flex">
         <SensitiveText
           variant={TextVariant.bodyMdMedium}
           color={color}
@@ -61,21 +59,11 @@ const AccountGroupBalanceChangeComponent: React.FC<
           {`(${formatPercentWithMinThreshold(percentChange, { signDisplay: 'always' })})`}
         </SensitiveText>
       </Box>
-      {portfolioButton()}
+      {trailingChild()}
     </Skeleton>
   );
 };
 
-export const AccountGroupBalanceChange: React.FC<
-  AccountGroupBalanceChangeProps
-> = (props) => {
-  const isMultichainAccountsState2Enabled = useSelector(
-    getIsMultichainAccountsState2Enabled,
-  );
-
-  if (!isMultichainAccountsState2Enabled) {
-    return null;
-  }
-
-  return <AccountGroupBalanceChangeComponent {...props} />;
-};
+export const AccountGroupBalanceChange = (
+  props: AccountGroupBalanceChangeProps,
+) => <AccountGroupBalanceChangeComponent {...props} />;

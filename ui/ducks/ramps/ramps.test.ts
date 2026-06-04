@@ -1,7 +1,7 @@
 import { configureStore, Store } from '@reduxjs/toolkit';
 import RampAPI from '../../helpers/ramps/rampApi/rampAPI';
 import { getUseExternalServices } from '../../selectors';
-import { getCurrentChainId } from '../../../shared/modules/selectors/networks';
+import { getCurrentChainId } from '../../../shared/lib/selectors/networks';
 import { CHAIN_IDS } from '../../../shared/constants/network';
 import {
   getMultichainIsBitcoin,
@@ -19,12 +19,15 @@ import { defaultBuyableChains } from './constants';
 jest.mock('../../helpers/ramps/rampApi/rampAPI');
 const mockedRampAPI = RampAPI as jest.Mocked<typeof RampAPI>;
 
-jest.mock('../../../shared/modules/selectors/networks', () => ({
+jest.mock('../../../shared/lib/selectors/networks', () => ({
   getCurrentChainId: jest.fn(),
   getNetworkConfigurationsByChainId: jest.fn(),
   getSelectedNetworkClientId: jest.fn(),
   selectDefaultNetworkClientIdsByChainId: jest.fn(),
   getNetworksMetadata: jest.fn(),
+  getProviderConfig: jest.fn(() => ({ chainId: '0x1' })),
+  selectNetworkConfigurationByChainId: jest.fn(),
+  selectDefaultRpcEndpointByChainId: jest.fn(),
 }));
 
 jest.mock('../../selectors', () => ({
@@ -48,6 +51,11 @@ describe('rampsSlice', () => {
         ramps: rampsReducer,
         metamask: (state = { completedOnboarding: true }) => state,
       },
+      middleware: (getDefaultMiddleware) =>
+        getDefaultMiddleware({
+          serializableCheck: false,
+          immutabilityCheck: false,
+        }),
     });
     mockedRampAPI.getNetworks.mockReset();
   });
@@ -292,7 +300,19 @@ describe('rampsSlice', () => {
   });
 
   describe('getIsBitcoinBuyable', () => {
-    it('should return false when Bitcoin is not in buyableChains', () => {
+    it('should return true when Bitcoin is in defaultBuyableChains', () => {
+      const state = store.getState();
+      expect(getIsBitcoinBuyable(state)).toBe(true);
+    });
+
+    it('should return false when Bitcoin is explicitly set to inactive', () => {
+      const mockBuyableChains = [
+        { chainId: MultichainNetworks.BITCOIN, active: false },
+      ];
+      store.dispatch({
+        type: 'ramps/setBuyableChains',
+        payload: mockBuyableChains,
+      });
       const state = store.getState();
       expect(getIsBitcoinBuyable(state)).toBe(false);
     });

@@ -13,10 +13,10 @@ import {
 import {
   getProviderConfig,
   getCurrentChainId,
-} from '../../../../shared/modules/selectors/networks';
+} from '../../../../shared/lib/selectors/networks';
 import { getShouldShowFiat } from '../../../selectors';
 import { EtherDenomination } from '../../../../shared/constants/common';
-import { Numeric } from '../../../../shared/modules/Numeric';
+import { Numeric } from '../../../../shared/lib/Numeric';
 import { useIsOriginalNativeTokenSymbol } from '../../../hooks/useIsOriginalNativeTokenSymbol';
 import { formatCurrency } from '../../../helpers/utils/confirm-tx.util';
 import useTokenExchangeRate from './hooks/useTokenExchangeRate';
@@ -164,7 +164,6 @@ export default function CurrencyInput({
     );
 
     // tokenDecimalValue does not need to be in here, since this side effect is only for upstream updates
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hexValue,
     asset?.address,

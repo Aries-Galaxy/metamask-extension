@@ -1,13 +1,13 @@
 import React, { ReactNode, useCallback, useContext } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import classnames from 'classnames';
-import { Box, Text } from '../../../../component-library';
+import classnames from 'clsx';
+import { Box, BoxBackgroundColor } from '@metamask/design-system-react';
+import { Text } from '../../../../component-library';
 import { SortOrder, SortingCallbacksT } from '../../util/sort';
 import {
   AlignItems,
   BackgroundColor,
   BlockSize,
-  BorderRadius,
   Display,
   TextVariant,
 } from '../../../../../helpers/constants/design-system';
@@ -58,9 +58,8 @@ export const SelectableListItem = ({
       </Text>
       {isSelected && (
         <Box
-          className="selectable-list-item__selected-indicator"
-          borderRadius={BorderRadius.pill}
-          backgroundColor={BackgroundColor.primaryDefault}
+          className="selectable-list-item__selected-indicator rounded-full"
+          backgroundColor={BoxBackgroundColor.PrimaryDefault}
         />
       )}
     </Box>
@@ -73,14 +72,19 @@ type SortControlProps = {
 
 const SortControl = ({ handleClose }: SortControlProps) => {
   const t = useI18nContext();
-  const trackEvent = useContext(MetaMetricsContext);
+  const { trackEvent } = useContext(MetaMetricsContext);
   const tokenSortConfig = useSelector(getTokenSortConfig);
   const currentCurrency = useSelector(getCurrentCurrency);
 
   const dispatch = useDispatch();
 
+  type SortKeys = 'title' | 'tokenFiatAmount';
   const handleSort = useCallback(
-    (key: string, sortCallback: keyof SortingCallbacksT, order: SortOrder) => {
+    (
+      key: SortKeys,
+      sortCallback: keyof SortingCallbacksT,
+      order: SortOrder,
+    ) => {
       dispatch(
         setTokenSortConfig({
           key,

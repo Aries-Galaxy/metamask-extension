@@ -3,19 +3,21 @@ import {
   CaveatConstraint,
   PermissionConstraint,
 } from '@metamask/permission-controller';
+import {
+  DAPP_ONE_URL,
+  DAPP_TWO_URL,
+  DAPP_URL,
+  DEFAULT_FIXTURE_ACCOUNT_ID,
+  DEFAULT_LOCAL_NODE_ETH_BALANCE_DEC,
+  NETWORK_CLIENT_ID,
+  WINDOW_TITLES,
+} from '../../constants';
 import NetworkManager, {
   NetworkId,
 } from '../../page-objects/pages/network-manager';
-import { loginWithBalanceValidation } from '../../page-objects/flows/login.flow';
-import FixtureBuilder from '../../fixture-builder';
-import {
-  withFixtures,
-  DAPP_URL,
-  DAPP_ONE_URL,
-  WINDOW_TITLES,
-  veryLargeDelayMs,
-  DAPP_TWO_URL,
-} from '../../helpers';
+import { login } from '../../page-objects/flows/login.flow';
+import FixtureBuilderV2 from '../../fixtures/fixture-builder-v2';
+import { withFixtures, veryLargeDelayMs } from '../../helpers';
 import { Driver, PAGES } from '../../webdriver/driver';
 import { PermissionNames } from '../../../../app/scripts/controllers/permissions';
 import { CaveatTypes } from '../../../../shared/constants/permissions';
@@ -24,11 +26,11 @@ import { Anvil } from '../../seeder/anvil';
 import HomePage from '../../page-objects/pages/home/homepage';
 import ActivityListPage from '../../page-objects/pages/home/activity-list';
 import { CHAIN_IDS } from '../../../../shared/constants/network';
-import ConnectAccountConfirmation from '../../page-objects/pages/confirmations/redesign/connect-account-confirmation';
-import Confirmation from '../../page-objects/pages/confirmations/redesign/confirmation';
-import TokenTransferTransactionConfirmation from '../../page-objects/pages/confirmations/redesign/token-transfer-confirmation';
-import ReviewPermissionsConfirmation from '../../page-objects/pages/confirmations/redesign/review-permissions-confirmation';
-import TransactionConfirmation from '../../page-objects/pages/confirmations/redesign/transaction-confirmation';
+import ConnectAccountConfirmation from '../../page-objects/pages/confirmations/connect-account-confirmation';
+import Confirmation from '../../page-objects/pages/confirmations/confirmation';
+import TokenTransferTransactionConfirmation from '../../page-objects/pages/confirmations/token-transfer-confirmation';
+import ReviewPermissionsConfirmation from '../../page-objects/pages/confirmations/review-permissions-confirmation';
+import TransactionConfirmation from '../../page-objects/pages/confirmations/transaction-confirmation';
 import HeaderNavbar from '../../page-objects/pages/header-navbar';
 
 // Window handle adjustments will need to be made for Non-MV3 Firefox
@@ -37,6 +39,33 @@ import HeaderNavbar from '../../page-objects/pages/header-navbar';
 // we try to open a third dapp, so this test run in Firefox will
 // validate two dapps instead of 3
 const IS_FIREFOX = process.env.SELENIUM_BROWSER === Browser.FIREFOX;
+
+/**
+ * Second/third Anvil chains (1338, 1000) are absent from the default fixture's
+ * AssetsController. With assets-unify, native gas balance is read from there,
+ * so confirmations otherwise show "Insufficient funds" when opening network fees.
+ */
+const REQUEST_QUEUE_EXTRA_LOCAL_ANVIL_NATIVE_ETH_INFO = {
+  aggregators: [],
+  decimals: 18,
+  image: '',
+  name: 'Ethereum',
+  symbol: 'ETH',
+  type: 'native' as const,
+};
+
+const REQUEST_QUEUE_EXTRA_LOCAL_ANVIL_ASSETS_CONTROLLER = {
+  assetsBalance: {
+    [DEFAULT_FIXTURE_ACCOUNT_ID]: {
+      'eip155:1338/slip44:60': { amount: '25' },
+      'eip155:1000/slip44:60': { amount: '25' },
+    },
+  },
+  assetsInfo: {
+    'eip155:1338/slip44:60': REQUEST_QUEUE_EXTRA_LOCAL_ANVIL_NATIVE_ETH_INFO,
+    'eip155:1000/slip44:60': REQUEST_QUEUE_EXTRA_LOCAL_ANVIL_NATIVE_ETH_INFO,
+  },
+};
 
 type ExpectedDetails = {
   chainId: string;
@@ -135,6 +164,7 @@ async function selectDappClickPersonalSign(
 
   const testDapp = new TestDapp(driver);
   await testDapp.clickPersonalSign();
+  await driver.waitForWindowWithTitleToBePresent(WINDOW_TITLES.Dialog);
 }
 
 async function switchToDialogPopoverValidateDetailsRedesign(
@@ -177,8 +207,8 @@ async function validateBalanceAndActivity(
   // Ensure there's an activity entry of "Sent" and "Confirmed"
   if (expectedActivityEntries) {
     const activityList = new ActivityListPage(driver);
-    await activityList.openActivityTab();
-    await activityList.checkTxAction({ action: 'Sent' });
+    await activityList.goToActivityList();
+    await activityList.checkTxAction({ action: 'Sent ETH' });
     await activityList.checkConfirmedTxNumberDisplayedInActivity(
       expectedActivityEntries,
     );
@@ -193,8 +223,8 @@ describe('Request-queue UI changes', function () {
     const chainId = 1338; // 0x53a
     await withFixtures(
       {
-        dapp: true,
-        fixtures: new FixtureBuilder()
+        dappOptions: { numberOfTestDapps: 2 },
+        fixtures: new FixtureBuilderV2()
           .withNetworkControllerDoubleNode()
           .build(),
         localNodeOptions: [
@@ -209,11 +239,11 @@ describe('Request-queue UI changes', function () {
             },
           },
         ],
-        dappOptions: { numberOfDapps: 2 },
+
         title: this.test?.fullTitle(),
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
 
         // Open the first dapp
         await openDappAndSwitchChain(driver, DAPP_URL, '0x539');
@@ -257,17 +287,12 @@ describe('Request-queue UI changes', function () {
     const chainId = 1338; // 0x53a
     await withFixtures(
       {
-        dapp: true,
-        fixtures: new FixtureBuilder()
+        dappOptions: { numberOfTestDapps: 3 },
+        fixtures: new FixtureBuilderV2()
           .withNetworkControllerTripleNode()
-          .withPreferencesController({
-            preferences: { showTestNetworks: true },
-          })
-          .withEnabledNetworks({
-            eip155: {
-              '0x539': true,
-            },
-          })
+          .withAssetsController(
+            REQUEST_QUEUE_EXTRA_LOCAL_ANVIL_ASSETS_CONTROLLER,
+          )
           .build(),
         localNodeOptions: [
           {
@@ -289,11 +314,10 @@ describe('Request-queue UI changes', function () {
           },
         ],
 
-        dappOptions: { numberOfDapps: 3 },
         title: this.test?.fullTitle(),
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
 
         // Open the first dapp
         await openDappAndSwitchChain(driver, DAPP_URL, '0x539');
@@ -376,7 +400,7 @@ describe('Request-queue UI changes', function () {
           await networkManager.selectTab('Custom');
 
           await networkManager.selectNetworkByNameWithWait('Localhost 7777');
-          await validateBalanceAndActivity(driver, '24.9998');
+          await validateBalanceAndActivity(driver, '25');
         }
 
         // Validate second network, where transaction was rejected
@@ -391,7 +415,7 @@ describe('Request-queue UI changes', function () {
         await networkManager.selectTab('Custom');
         await networkManager.selectNetworkByNameWithWait('Localhost 8545');
 
-        await validateBalanceAndActivity(driver, '24.9998');
+        await validateBalanceAndActivity(driver, '25');
       },
     );
   });
@@ -401,8 +425,8 @@ describe('Request-queue UI changes', function () {
     const chainId = 1338;
     await withFixtures(
       {
-        dapp: true,
-        fixtures: new FixtureBuilder()
+        dappOptions: { numberOfTestDapps: 2 },
+        fixtures: new FixtureBuilderV2()
           .withNetworkControllerDoubleNode()
           .withPreferencesController({
             preferences: { showTestNetworks: true },
@@ -421,11 +445,11 @@ describe('Request-queue UI changes', function () {
             },
           },
         ],
-        dappOptions: { numberOfDapps: 2 },
+
         title: this.test?.fullTitle(),
       },
       async ({ driver }) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
 
         // Open the first dapp
         await openDappAndSwitchChain(driver, DAPP_URL, '0x539');
@@ -470,14 +494,14 @@ describe('Request-queue UI changes', function () {
   it('should signal from UI to dapp the network change', async function () {
     await withFixtures(
       {
-        dapp: true,
-        fixtures: new FixtureBuilder().build(),
+        dappOptions: { numberOfTestDapps: 1 },
+        fixtures: new FixtureBuilderV2().build(),
         title: this.test?.fullTitle(),
         driverOptions: { constrainWindowSize: true },
       },
       async ({ driver }: { driver: Driver }) => {
         // Navigate to extension home screen
-        await loginWithBalanceValidation(driver);
+        await login(driver);
 
         // Open the first dapp which starts on chain '0x539
         await openDappAndSwitchChain(driver, DAPP_URL, '0x539');
@@ -490,9 +514,8 @@ describe('Request-queue UI changes', function () {
         // Open the popup with shimmed activeTabOrigin
         await openPopupWithActiveTabOrigin(driver, DAPP_URL);
 
-        // Switch to mainnet using per-dapp connected network flow
-        await headerNavbar.openConnectionMenu();
-        await headerNavbar.clickConnectedSitePopoverNetworkButton();
+        // Switch to mainnet using control bar per-dapp network selector
+        await headerNavbar.openDappNetworkMenu();
         await headerNavbar.selectNetwork('Ethereum');
 
         // Switch back to the Dapp tab
@@ -509,8 +532,8 @@ describe('Request-queue UI changes', function () {
     const chainId = 1338;
     await withFixtures(
       {
-        dapp: true,
-        fixtures: new FixtureBuilder()
+        dappOptions: { numberOfTestDapps: 2 },
+        fixtures: new FixtureBuilderV2()
           .withNetworkControllerDoubleNode()
           .withEnabledNetworks({
             eip155: {
@@ -533,7 +556,7 @@ describe('Request-queue UI changes', function () {
         // This test intentionally quits the local node server while the extension is using it, causing
         // PollingBlockTracker errors and others. These are expected.
         ignoredConsoleErrors: ['ignore-all'],
-        dappOptions: { numberOfDapps: 2 },
+
         title: this.test?.fullTitle(),
       },
       async ({
@@ -543,7 +566,7 @@ describe('Request-queue UI changes', function () {
         driver: Driver;
         localNodes: Anvil[];
       }) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
 
         // Open the first dapp
         await openDappAndSwitchChain(driver, DAPP_URL, '0x539');
@@ -560,7 +583,6 @@ describe('Request-queue UI changes', function () {
         const networkManager = new NetworkManager(driver);
         await networkManager.openNetworkManager();
         await networkManager.selectTab('Popular');
-        await networkManager.checkNetworkIsSelected(NetworkId.ETHEREUM);
         await networkManager.closeNetworkManager();
 
         // Kill local node servers
@@ -588,17 +610,15 @@ describe('Request-queue UI changes', function () {
     const chainId = 1338;
     await withFixtures(
       {
-        dapp: true,
+        dappOptions: { numberOfTestDapps: 2 },
         // Presently confirmations take up to 10 seconds to display on a dead network
         driverOptions: { timeOut: 30000 },
-        fixtures: new FixtureBuilder()
+        fixtures: new FixtureBuilderV2()
           .withNetworkControllerDoubleNode()
-          .withNetworkControllerOnMainnet()
+          .withSelectedNetwork(NETWORK_CLIENT_ID.MAINNET)
           .withEnabledNetworks({
             eip155: {
               '0x1': true,
-              '0x2105': true,
-              '0xe708': true,
             },
           })
           .build(),
@@ -617,16 +637,13 @@ describe('Request-queue UI changes', function () {
         // This test intentionally quits the local node server while the extension is using it, causing
         // PollingBlockTracker errors and others. These are expected.
         ignoredConsoleErrors: ['ignore-all'],
-        dappOptions: { numberOfDapps: 2 },
+
         title: this.test?.fullTitle(),
       },
       async ({ driver, localNodes }) => {
-        await loginWithBalanceValidation(
-          driver,
-          undefined,
-          undefined,
-          '85,000.00',
-        );
+        await login(driver, {
+          expectedBalance: DEFAULT_LOCAL_NODE_ETH_BALANCE_DEC,
+        });
 
         // Open the first dapp
         await openDappAndSwitchChain(driver, DAPP_URL, '0x539');

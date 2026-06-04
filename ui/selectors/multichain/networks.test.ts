@@ -11,14 +11,14 @@ import {
 } from '@metamask/utils';
 import { type MultichainNetworkConfiguration } from '@metamask/multichain-network-controller';
 
-import { type NetworkState } from '../../../shared/modules/selectors/networks';
-import type { AccountsState } from '../accounts';
+import { type NetworkState } from '../../../shared/lib/selectors/networks';
+import type { AccountsState } from '../../../shared/lib/selectors/accounts';
 import {
   MOCK_ACCOUNT_EOA,
   MOCK_ACCOUNT_BIP122_P2WPKH,
   MOCK_ACCOUNT_SOLANA_MAINNET,
 } from '../../../test/data/mock-accounts';
-import { RemoteFeatureFlagsState } from '../remote-feature-flags';
+import { RemoteFeatureFlagsState } from '../../../shared/lib/selectors/remote-feature-flags';
 import {
   type MultichainNetworkControllerState,
   getNonEvmMultichainNetworkConfigurationsByChainId,
@@ -26,24 +26,42 @@ import {
   getSelectedMultichainNetworkChainId,
   getSelectedMultichainNetworkConfiguration,
   getIsEvmMultichainNetworkSelected,
-  selectFirstUnavailableEvmNetwork,
+  selectFirstFailedNetworkForNetworkConnectionBanner,
+  getEvmMultichainNetworkConfigurations,
+  getAllMultichainNetworkConfigurations,
 } from './networks';
 
-// Mock the main selectors to avoid circular dependency
-jest.mock('../selectors', () => ({
-  getIsBitcoinSupportEnabled: jest.fn(
-    (state) => state.metamask.remoteFeatureFlags.addBitcoinAccount,
-  ),
-  getIsSolanaSupportEnabled: jest.fn(
-    (state) => state.metamask.remoteFeatureFlags.addSolanaAccount,
-  ),
+jest.mock('./feature-flags', () => ({
+  getIsBitcoinSupportEnabled: jest.fn((state) => {
+    const { bitcoinAccounts } = state.metamask.remoteFeatureFlags;
+    // Keep this simple, only check if it's enabled or not.
+    return bitcoinAccounts?.enabled;
+  }),
+  getIsSolanaSupportEnabled: jest.fn((state) => {
+    const { solanaAccounts } = state.metamask.remoteFeatureFlags;
+    // Keep this simple, only check if it's enabled or not.
+    return solanaAccounts?.enabled;
+  }),
   getIsSolanaTestnetSupportEnabled: jest.fn(
     (state) => state.metamask.remoteFeatureFlags.solanaTestnetsEnabled,
   ),
   getIsBitcoinTestnetSupportEnabled: jest.fn(
     (state) => state.metamask.remoteFeatureFlags.bitcoinTestnetsEnabled,
   ),
-  getEnabledNetworks: jest.fn(() => ({ eip155: {} })),
+  getIsTronSupportEnabled: jest.fn((state) => {
+    const { tronAccounts } = state.metamask.remoteFeatureFlags;
+    // Keep this simple, only check if it's enabled or not.
+    return tronAccounts?.enabled;
+  }),
+  getIsTronTestnetSupportEnabled: jest.fn(
+    (state) => state.metamask.remoteFeatureFlags.tronTestnetsEnabled,
+  ),
+}));
+
+jest.mock('../../../shared/lib/selectors/multichain', () => ({
+  getEnabledNetworks: jest.fn(
+    (state) => state.metamask.enabledNetworkMap ?? { eip155: {} },
+  ),
 }));
 
 type TestState = AccountsState &
@@ -132,10 +150,12 @@ const mockEvmNetworksWithOldConfig: Record<Hex, NetworkConfiguration> = {
 const mockState: TestState = {
   metamask: {
     remoteFeatureFlags: {
-      addSolanaAccount: true,
+      solanaAccounts: { enabled: true, minimumVersion: '13.6.0' },
       solanaTestnetsEnabled: true,
       bitcoinTestnetsEnabled: false,
-      addBitcoinAccount: true,
+      bitcoinAccounts: { enabled: true, minimumVersion: '13.6.0' },
+      tronAccounts: { enabled: true, minimumVersion: '13.6.0' },
+      tronTestnetsEnabled: false,
     },
     multichainNetworkConfigurationsByChainId: {
       ...mockNonEvmNetworks,
@@ -162,6 +182,9 @@ const mockState: TestState = {
       accounts: {
         [MOCK_ACCOUNT_EOA.id]: MOCK_ACCOUNT_EOA,
       },
+    },
+    accountIdByAddress: {
+      [MOCK_ACCOUNT_EOA.address]: MOCK_ACCOUNT_EOA.id,
     },
   },
 };
@@ -194,7 +217,7 @@ describe('Multichain network selectors', () => {
           ...mockState.metamask,
           remoteFeatureFlags: {
             ...mockState.metamask.remoteFeatureFlags,
-            addSolanaAccount: false,
+            solanaAccounts: { enabled: false, minimumVersion: '13.6.0' },
           },
         },
       };
@@ -219,8 +242,15 @@ describe('Multichain network selectors', () => {
           ...mockState.metamask,
           remoteFeatureFlags: {
             ...mockState.metamask.remoteFeatureFlags,
-            addSolanaAccount: false,
-            addBitcoinAccount: false,
+            solanaAccounts: { enabled: false, minimumVersion: '13.6.0' },
+            bitcoinAccounts: { enabled: false, minimumVersion: '13.6.0' },
+          },
+          // Ensure no accounts with Bitcoin/Solana scopes exist
+          internalAccounts: {
+            selectedAccount: MOCK_ACCOUNT_EOA.id,
+            accounts: {
+              [MOCK_ACCOUNT_EOA.id]: MOCK_ACCOUNT_EOA,
+            },
           },
         },
       };
@@ -242,8 +272,8 @@ describe('Multichain network selectors', () => {
           ...mockState.metamask,
           remoteFeatureFlags: {
             ...mockState.metamask.remoteFeatureFlags,
-            addSolanaAccount: false,
-            addBitcoinAccount: false,
+            solanaAccounts: { enabled: false, minimumVersion: '13.6.0' },
+            bitcoinAccounts: { enabled: false, minimumVersion: '13.6.0' },
           },
           internalAccounts: {
             ...mockState.metamask.internalAccounts,
@@ -276,8 +306,8 @@ describe('Multichain network selectors', () => {
           ...mockState.metamask,
           remoteFeatureFlags: {
             ...mockState.metamask.remoteFeatureFlags,
-            addSolanaAccount: false,
-            addBitcoinAccount: true,
+            solanaAccounts: { enabled: false, minimumVersion: '13.6.0' },
+            bitcoinAccounts: { enabled: true, minimumVersion: '13.6.0' },
           },
           internalAccounts: {
             ...mockState.metamask.internalAccounts,
@@ -313,8 +343,8 @@ describe('Multichain network selectors', () => {
           ...mockState.metamask,
           remoteFeatureFlags: {
             ...mockState.metamask.remoteFeatureFlags,
-            addSolanaAccount: false,
-            addBitcoinAccount: true,
+            solanaAccounts: { enabled: false, minimumVersion: '13.6.0' },
+            bitcoinAccounts: { enabled: true, minimumVersion: '13.6.0' },
           },
           internalAccounts: {
             ...mockState.metamask.internalAccounts,
@@ -344,6 +374,187 @@ describe('Multichain network selectors', () => {
         },
         mockEvmNetworksWithOldConfig,
       ]);
+    });
+  });
+
+  describe('getEvmMultichainNetworkConfigurations', () => {
+    it('returns EVM networks in multichain format', () => {
+      expect(getEvmMultichainNetworkConfigurations(mockState)).toStrictEqual(
+        mockEvmNetworksWithNewConfig,
+      );
+    });
+
+    it('returns stable references when called multiple times with the same state', () => {
+      const result1 = getEvmMultichainNetworkConfigurations(mockState);
+      const result2 = getEvmMultichainNetworkConfigurations(mockState);
+
+      expect(result1).toBe(result2);
+    });
+
+    it('returns a new reference when state changes', () => {
+      const result1 = getEvmMultichainNetworkConfigurations(mockState);
+
+      const modifiedState: TestState = {
+        ...mockState,
+        metamask: {
+          ...mockState.metamask,
+          networkConfigurationsByChainId: {
+            ...mockState.metamask.networkConfigurationsByChainId,
+            '0x5': {
+              chainId: '0x5',
+              name: 'Goerli',
+              nativeCurrency: 'GoerliETH',
+              rpcEndpoints: [
+                {
+                  networkClientId: 'goerli',
+                  type: RpcEndpointType.Infura,
+                  url: 'https://goerli.infura.io/v3/{infuraProjectId}',
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+        },
+      };
+
+      const result2 = getEvmMultichainNetworkConfigurations(modifiedState);
+
+      expect(result1).not.toBe(result2);
+      expect(Object.keys(result2)).toHaveLength(3);
+    });
+  });
+
+  describe('getAllMultichainNetworkConfigurations', () => {
+    it('returns all multichain networks (EVM + non-EVM)', () => {
+      expect(getAllMultichainNetworkConfigurations(mockState)).toStrictEqual({
+        ...mockNonEvmNetworks,
+        ...mockEvmNetworksWithNewConfig,
+      });
+    });
+
+    it('returns stable references when called multiple times with the same state', () => {
+      const result1 = getAllMultichainNetworkConfigurations(mockState);
+      const result2 = getAllMultichainNetworkConfigurations(mockState);
+
+      expect(result1).toBe(result2);
+    });
+
+    it('returns a new reference when state changes', () => {
+      const result1 = getAllMultichainNetworkConfigurations(mockState);
+
+      const modifiedState: TestState = {
+        ...mockState,
+        metamask: {
+          ...mockState.metamask,
+          networkConfigurationsByChainId: {
+            ...mockState.metamask.networkConfigurationsByChainId,
+            '0x5': {
+              chainId: '0x5',
+              name: 'Goerli',
+              nativeCurrency: 'GoerliETH',
+              rpcEndpoints: [
+                {
+                  networkClientId: 'goerli',
+                  type: RpcEndpointType.Infura,
+                  url: 'https://goerli.infura.io/v3/{infuraProjectId}',
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+        },
+      };
+
+      const result2 = getAllMultichainNetworkConfigurations(modifiedState);
+
+      expect(result1).not.toBe(result2);
+    });
+  });
+
+  describe('getMultichainNetworkConfigurationsByChainId - reference stability', () => {
+    it('returns stable references when called multiple times with the same state', () => {
+      const result1 = getMultichainNetworkConfigurationsByChainId(mockState);
+      const result2 = getMultichainNetworkConfigurationsByChainId(mockState);
+
+      // The tuple itself should be the same reference
+      expect(result1).toBe(result2);
+      // Each element should also be the same reference
+      expect(result1[0]).toBe(result2[0]);
+      expect(result1[1]).toBe(result2[1]);
+    });
+
+    it('returns a new reference when EVM networks change', () => {
+      const result1 = getMultichainNetworkConfigurationsByChainId(mockState);
+
+      const modifiedState: TestState = {
+        ...mockState,
+        metamask: {
+          ...mockState.metamask,
+          networkConfigurationsByChainId: {
+            ...mockState.metamask.networkConfigurationsByChainId,
+            '0x5': {
+              chainId: '0x5',
+              name: 'Goerli',
+              nativeCurrency: 'GoerliETH',
+              rpcEndpoints: [
+                {
+                  networkClientId: 'goerli',
+                  type: RpcEndpointType.Infura,
+                  url: 'https://goerli.infura.io/v3/{infuraProjectId}',
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+        },
+      };
+
+      const result2 =
+        getMultichainNetworkConfigurationsByChainId(modifiedState);
+
+      // References should be different when state changes
+      expect(result1).not.toBe(result2);
+      expect(result1[0]).not.toBe(result2[0]);
+      expect(result1[1]).not.toBe(result2[1]);
+    });
+  });
+
+  describe('getSelectedMultichainNetworkConfiguration - reference stability', () => {
+    it('returns stable references when called multiple times with the same state', () => {
+      const result1 = getSelectedMultichainNetworkConfiguration(mockState);
+      const result2 = getSelectedMultichainNetworkConfiguration(mockState);
+
+      expect(result1).toBe(result2);
+    });
+
+    it('returns same reference when unrelated state changes', () => {
+      const result1 = getSelectedMultichainNetworkConfiguration(mockState);
+
+      // Change something unrelated to selected network
+      const modifiedState = {
+        ...mockState,
+        metamask: {
+          ...mockState.metamask,
+          networksMetadata: {
+            ...mockState.metamask.networksMetadata,
+            mainnet: {
+              EIPS: { 1559: false },
+              status: NetworkStatus.Unavailable,
+            },
+          },
+        },
+      };
+
+      const result2 = getSelectedMultichainNetworkConfiguration(modifiedState);
+
+      // Should be the same reference since selected network config didn't change
+      expect(result1).toBe(result2);
     });
   });
 
@@ -384,8 +595,8 @@ describe('Multichain network selectors', () => {
     });
   });
 
-  describe('selectFirstUnavailableEvmNetwork', () => {
-    it('returns the first EVM network that does not have a status of "available"', () => {
+  describe('selectFirstFailedNetworkForNetworkConnectionBanner', () => {
+    it('returns the first failed network when every enabled network has failed (all-down escape hatch)', () => {
       const mockStateWithMultipleUnavailableNetworks = {
         metamask: {
           enabledNetworkMap: {
@@ -411,7 +622,7 @@ describe('Multichain network selectors', () => {
               nativeCurrency: 'ETH',
               rpcEndpoints: [
                 {
-                  type: RpcEndpointType.Infura,
+                  type: RpcEndpointType.Infura as const,
                   url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
                   networkClientId: 'mainnet' as const,
                 },
@@ -426,7 +637,7 @@ describe('Multichain network selectors', () => {
               nativeCurrency: 'SepoliaETH',
               rpcEndpoints: [
                 {
-                  type: RpcEndpointType.Infura,
+                  type: RpcEndpointType.Infura as const,
                   url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
                   networkClientId: 'sepolia' as const,
                 },
@@ -441,13 +652,83 @@ describe('Multichain network selectors', () => {
       };
 
       expect(
-        selectFirstUnavailableEvmNetwork(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
           mockStateWithMultipleUnavailableNetworks,
         ),
       ).toStrictEqual({
         networkName: 'Ethereum Mainnet',
         networkClientId: 'mainnet',
         chainId: '0x1',
+        isInfuraEndpoint: true,
+        infuraEndpointIndex: undefined,
+      });
+    });
+
+    it('returns the failed custom network when both a custom and Infura network are down', () => {
+      const mockStateWithMultipleUnavailableNetworks = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1000': true,
+              '0xaa36a7': true,
+            },
+          },
+          networksMetadata: {
+            'AAAA-BBBB-CCCC-DDDD': {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+            sepolia: {
+              EIPS: {},
+              status: NetworkStatus.Blocked,
+            },
+          },
+          networkConfigurationsByChainId: {
+            '0x1000': {
+              chainId: '0x1000' as const,
+              name: 'Custom Network',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Custom as const,
+                  url: 'https://custom.network',
+                  networkClientId: 'AAAA-BBBB-CCCC-DDDD' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xaa36a7': {
+              chainId: '0xaa36a7' as const,
+              name: 'Sepolia',
+              nativeCurrency: 'SepoliaETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'sepolia' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'AAAA-BBBB-CCCC-DDDD',
+        },
+      };
+
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithMultipleUnavailableNetworks,
+        ),
+      ).toStrictEqual({
+        networkName: 'Custom Network',
+        networkClientId: 'AAAA-BBBB-CCCC-DDDD',
+        chainId: '0x1000',
+        isInfuraEndpoint: false,
+        infuraEndpointIndex: undefined,
       });
     });
 
@@ -477,7 +758,7 @@ describe('Multichain network selectors', () => {
               nativeCurrency: 'ETH',
               rpcEndpoints: [
                 {
-                  type: RpcEndpointType.Infura,
+                  type: RpcEndpointType.Infura as const,
                   url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
                   networkClientId: 'mainnet' as const,
                 },
@@ -492,7 +773,7 @@ describe('Multichain network selectors', () => {
               nativeCurrency: 'SepoliaETH',
               rpcEndpoints: [
                 {
-                  type: RpcEndpointType.Infura,
+                  type: RpcEndpointType.Infura as const,
                   url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
                   networkClientId: 'sepolia' as const,
                 },
@@ -507,7 +788,9 @@ describe('Multichain network selectors', () => {
       };
 
       expect(
-        selectFirstUnavailableEvmNetwork(mockStateWithAvailableEvmNetworks),
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithAvailableEvmNetworks,
+        ),
       ).toBeNull();
     });
 
@@ -524,7 +807,9 @@ describe('Multichain network selectors', () => {
       };
 
       expect(
-        selectFirstUnavailableEvmNetwork(mockStateWithNoEnabledEvmNetworks),
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithNoEnabledEvmNetworks,
+        ),
       ).toBeNull();
     });
 
@@ -544,7 +829,7 @@ describe('Multichain network selectors', () => {
               nativeCurrency: 'ETH',
               rpcEndpoints: [
                 {
-                  type: RpcEndpointType.Infura,
+                  type: RpcEndpointType.Infura as const,
                   url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
                   networkClientId: 'mainnet' as const,
                 },
@@ -559,7 +844,9 @@ describe('Multichain network selectors', () => {
       };
 
       expect(
-        selectFirstUnavailableEvmNetwork(mockStateWithMissingMetadata),
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithMissingMetadata,
+        ),
       ).toBeNull();
     });
 
@@ -583,8 +870,503 @@ describe('Multichain network selectors', () => {
       };
 
       expect(
-        selectFirstUnavailableEvmNetwork(mockStateWithMissingNetworkConfig),
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithMissingNetworkConfig,
+        ),
       ).toBeNull();
+    });
+
+    it('returns infuraEndpointIndex when custom network has an Infura endpoint available', () => {
+      const mockStateWithCustomAndInfuraEndpoints = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0xa4b1': true,
+            },
+          },
+          networksMetadata: {
+            'custom-arbitrum': {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+          },
+          networkConfigurationsByChainId: {
+            '0xa4b1': {
+              chainId: '0xa4b1' as const,
+              name: 'Arbitrum One',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Custom as const,
+                  url: 'https://custom.arbitrum.rpc',
+                  networkClientId: 'custom-arbitrum' as const,
+                },
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://arbitrum-mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'arbitrum-mainnet' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'custom-arbitrum',
+        },
+      };
+
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithCustomAndInfuraEndpoints as Parameters<
+            typeof selectFirstFailedNetworkForNetworkConnectionBanner
+          >[0],
+        ),
+      ).toStrictEqual({
+        networkName: 'Arbitrum One',
+        networkClientId: 'custom-arbitrum',
+        chainId: '0xa4b1',
+        isInfuraEndpoint: false,
+        infuraEndpointIndex: 1,
+      });
+    });
+
+    it('returns undefined infuraEndpointIndex when custom network has no Infura endpoint', () => {
+      const mockStateWithOnlyCustomEndpoint = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1000': true,
+            },
+          },
+          networksMetadata: {
+            'custom-network': {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+          },
+          networkConfigurationsByChainId: {
+            '0x1000': {
+              chainId: '0x1000' as const,
+              name: 'Custom Network',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Custom as const,
+                  url: 'https://custom.network.rpc',
+                  networkClientId: 'custom-network' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'custom-network',
+        },
+      };
+
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithOnlyCustomEndpoint,
+        ),
+      ).toStrictEqual({
+        networkName: 'Custom Network',
+        networkClientId: 'custom-network',
+        chainId: '0x1000',
+        isInfuraEndpoint: false,
+        infuraEndpointIndex: undefined,
+      });
+    });
+
+    it('returns the network when only one network is enabled and it has failed (all-down escape hatch)', () => {
+      const mockStateWithInfuraAsDefault = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1': true,
+            },
+          },
+          networksMetadata: {
+            mainnet: {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+          },
+          networkConfigurationsByChainId: {
+            '0x1': {
+              chainId: '0x1' as const,
+              name: 'Ethereum Mainnet',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'mainnet' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'mainnet',
+        },
+      };
+
+      const result = selectFirstFailedNetworkForNetworkConnectionBanner(
+        mockStateWithInfuraAsDefault,
+      );
+      expect(result).toStrictEqual({
+        networkName: 'Ethereum Mainnet',
+        networkClientId: 'mainnet',
+        chainId: '0x1',
+        isInfuraEndpoint: true,
+        infuraEndpointIndex: undefined,
+      });
+    });
+
+    it('returns null when only one Infura network out of many enabled has failed', () => {
+      // Single Infura blip in an otherwise-healthy set: 1 distinct domain,
+      // not all-down. Suppress to avoid the noisy banner. See WPC-1014.
+      const mockStateWithSingleInfuraDown = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1': true,
+              '0xaa36a7': true,
+            },
+          },
+          networksMetadata: {
+            mainnet: {
+              EIPS: {},
+              status: NetworkStatus.Available,
+            },
+            sepolia: {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+          },
+          networkConfigurationsByChainId: {
+            '0x1': {
+              chainId: '0x1' as const,
+              name: 'Ethereum Mainnet',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'mainnet' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xaa36a7': {
+              chainId: '0xaa36a7' as const,
+              name: 'Sepolia',
+              nativeCurrency: 'SepoliaETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'sepolia' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'mainnet',
+        },
+      };
+
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithSingleInfuraDown,
+        ),
+      ).toBeNull();
+    });
+
+    it('returns null when multiple Infura networks fail together but stay on one domain and others remain available', () => {
+      // Infura-wide partial outage: three *.infura.io networks down, but two
+      // popular non-Infura RPCs are still healthy. Only 1 distinct domain in
+      // the failed set, not all-down -> suppress the banner.
+      const mockStateWithInfuraPartialOutage = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1': true,
+              '0xaa36a7': true,
+              '0xe708': true,
+              '0xa4b1': true,
+              '0xa': true,
+            },
+          },
+          networksMetadata: {
+            mainnet: { EIPS: {}, status: NetworkStatus.Unavailable },
+            sepolia: { EIPS: {}, status: NetworkStatus.Unavailable },
+            linea: { EIPS: {}, status: NetworkStatus.Unavailable },
+            'arbitrum-alchemy': { EIPS: {}, status: NetworkStatus.Available },
+            'optimism-alchemy': { EIPS: {}, status: NetworkStatus.Available },
+          },
+          networkConfigurationsByChainId: {
+            '0x1': {
+              chainId: '0x1' as const,
+              name: 'Ethereum Mainnet',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'mainnet' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xaa36a7': {
+              chainId: '0xaa36a7' as const,
+              name: 'Sepolia',
+              nativeCurrency: 'SepoliaETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'sepolia' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xe708': {
+              chainId: '0xe708' as const,
+              name: 'Linea',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://linea-mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'linea' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xa4b1': {
+              chainId: '0xa4b1' as const,
+              name: 'Arbitrum One',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://arbitrum-mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'arbitrum-alchemy' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xa': {
+              chainId: '0xa' as const,
+              name: 'Optimism',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://optimism-mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'optimism-alchemy' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'mainnet',
+        },
+      };
+
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithInfuraPartialOutage as unknown as Parameters<
+            typeof selectFirstFailedNetworkForNetworkConnectionBanner
+          >[0],
+        ),
+      ).toBeNull();
+    });
+
+    it('returns the first failed network when failures span 2+ domains', () => {
+      const mockStateWithTwoDomainsDown = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1': true,
+              '0xa4b1': true,
+              '0xaa36a7': true,
+            },
+          },
+          networksMetadata: {
+            mainnet: { EIPS: {}, status: NetworkStatus.Unavailable },
+            'arbitrum-alchemy': {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+            sepolia: { EIPS: {}, status: NetworkStatus.Available },
+          },
+          networkConfigurationsByChainId: {
+            '0x1': {
+              chainId: '0x1' as const,
+              name: 'Ethereum Mainnet',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'mainnet' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xa4b1': {
+              chainId: '0xa4b1' as const,
+              name: 'Arbitrum One',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Custom as const,
+                  url: 'https://arb-mainnet.g.alchemy.com/v2/abc',
+                  networkClientId: 'arbitrum-alchemy' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xaa36a7': {
+              chainId: '0xaa36a7' as const,
+              name: 'Sepolia',
+              nativeCurrency: 'SepoliaETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'sepolia' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'mainnet',
+        },
+      };
+
+      // Both Mainnet (Infura) and the Alchemy-backed Arbitrum have failed
+      // -> 2 distinct domains -> banner. The Alchemy RPC is custom so the
+      // override surfaces it for the CTA.
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithTwoDomainsDown,
+        ),
+      ).toStrictEqual({
+        networkName: 'Arbitrum One',
+        networkClientId: 'arbitrum-alchemy',
+        chainId: '0xa4b1',
+        isInfuraEndpoint: false,
+        infuraEndpointIndex: undefined,
+      });
+    });
+
+    it('returns the failed custom network even when other networks are available (custom override)', () => {
+      const mockStateWithCustomDownAmongAvailable = {
+        metamask: {
+          enabledNetworkMap: {
+            [KnownCaipNamespace.Eip155]: {
+              '0x1': true,
+              '0xaa36a7': true,
+              '0x1000': true,
+            },
+          },
+          networksMetadata: {
+            mainnet: { EIPS: {}, status: NetworkStatus.Available },
+            sepolia: { EIPS: {}, status: NetworkStatus.Available },
+            'custom-network': {
+              EIPS: {},
+              status: NetworkStatus.Unavailable,
+            },
+          },
+          networkConfigurationsByChainId: {
+            '0x1': {
+              chainId: '0x1' as const,
+              name: 'Ethereum Mainnet',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://mainnet.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'mainnet' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0xaa36a7': {
+              chainId: '0xaa36a7' as const,
+              name: 'Sepolia',
+              nativeCurrency: 'SepoliaETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Infura as const,
+                  url: 'https://sepolia.infura.io/v3/{infuraProjectId}' as const,
+                  networkClientId: 'sepolia' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+            '0x1000': {
+              chainId: '0x1000' as const,
+              name: 'Custom Network',
+              nativeCurrency: 'ETH',
+              rpcEndpoints: [
+                {
+                  type: RpcEndpointType.Custom as const,
+                  url: 'https://custom.network',
+                  networkClientId: 'custom-network' as const,
+                },
+              ],
+              defaultRpcEndpointIndex: 0,
+              blockExplorerUrls: [],
+              defaultBlockExplorerUrlIndex: 0,
+            },
+          },
+          selectedNetworkClientId: 'mainnet',
+        },
+      };
+
+      expect(
+        selectFirstFailedNetworkForNetworkConnectionBanner(
+          mockStateWithCustomDownAmongAvailable,
+        ),
+      ).toStrictEqual({
+        networkName: 'Custom Network',
+        networkClientId: 'custom-network',
+        chainId: '0x1000',
+        isInfuraEndpoint: false,
+        infuraEndpointIndex: undefined,
+      });
     });
   });
 });

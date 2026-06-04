@@ -11,7 +11,7 @@ import {
 } from '../../../../hooks/useTrustSignals';
 import { SignatureRequestType } from '../../types/confirm';
 import { useI18nContext } from '../../../../hooks/useI18nContext';
-// eslint-disable-next-line import/no-restricted-paths
+// eslint-disable-next-line import-x/no-restricted-paths
 import { isSecurityAlertsAPIEnabled } from '../../../../../app/scripts/lib/ppom/security-alerts-api';
 
 export function useAddressTrustSignalAlerts(): Alert[] {
@@ -48,6 +48,7 @@ export function useAddressTrustSignalAlerts(): Alert[] {
   const { state: trustSignalDisplayState } = useTrustSignal(
     addressToCheck || '',
     NameType.ETHEREUM_ADDRESS,
+    currentConfirmation?.chainId,
   );
 
   return useMemo(() => {

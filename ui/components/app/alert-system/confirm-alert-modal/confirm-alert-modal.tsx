@@ -25,6 +25,7 @@ import { AcknowledgeCheckboxBase } from '../alert-modal/alert-modal';
 import { MultipleAlertModal } from '../multiple-alert-modal';
 import { MetaMetricsEventLocation } from '../../../../../shared/constants/metametrics';
 import type { OnCancelHandler } from '../../../../pages/confirmations/components/confirm/footer/footer';
+import { useBoolean } from '../../../../hooks/useBoolean';
 
 export type ConfirmAlertModalProps = {
   /** Callback function that is called when the cancel button is clicked. */
@@ -126,7 +127,7 @@ export function ConfirmAlertModal({
   const { fieldAlerts, alerts, hasUnconfirmedFieldDangerAlerts } =
     useAlerts(ownerId);
 
-  const [confirmCheckbox, setConfirmCheckbox] = useState<boolean>(false);
+  const { value: confirmCheckbox, toggle } = useBoolean();
 
   const hasDangerBlockingAlerts = fieldAlerts.some(
     (alert) => alert.severity === Severity.Danger && alert.isBlocking,
@@ -157,10 +158,6 @@ export function ConfirmAlertModal({
     setMultipleAlertModalVisible(true);
   }, []);
 
-  const handleConfirmCheckbox = useCallback(() => {
-    setConfirmCheckbox(!confirmCheckbox);
-  }, [confirmCheckbox]);
-
   if (multipleAlertModalVisible) {
     return (
       <MultipleAlertModal
@@ -178,6 +175,11 @@ export function ConfirmAlertModal({
     return null;
   }
 
+  const acknowledgementRequired =
+    selectedAlert.severity === Severity.Danger &&
+    !selectedAlert.isBlocking &&
+    !selectedAlert.acknowledgeBypass;
+
   return (
     <AlertModal
       ownerId={ownerId}
@@ -192,7 +194,7 @@ export function ConfirmAlertModal({
         <AcknowledgeCheckboxBase
           selectedAlert={selectedAlert}
           isConfirmed={confirmCheckbox}
-          onCheckboxClick={handleConfirmCheckbox}
+          onCheckboxClick={toggle}
           label={
             alerts.length === 1
               ? t('confirmAlertModalAcknowledgeSingle')
@@ -204,7 +206,7 @@ export function ConfirmAlertModal({
         <ConfirmButtons
           onCancel={onCancel}
           onSubmit={onSubmit}
-          isConfirmed={confirmCheckbox}
+          isConfirmed={acknowledgementRequired ? confirmCheckbox : true}
         />
       }
     />

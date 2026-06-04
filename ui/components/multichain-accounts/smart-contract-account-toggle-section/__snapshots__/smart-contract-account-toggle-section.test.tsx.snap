@@ -3,21 +3,21 @@
 exports[`SmartContractAccountToggleSection Disabled State Handling disables all toggles when requests are pending 1`] = `
 <div>
   <div
-    class="mm-box mm-box--padding-top-3 mm-box--padding-right-2 mm-box--padding-bottom-4 mm-box--padding-left-4 mm-box--width-full mm-box--background-color-background-section"
+    class="pt-3 pr-2 pb-4 pl-4 bg-section w-full"
     style="border-radius: 8px;"
   >
     <div
-      class="mm-box mm-box--padding-right-2"
+      class="pr-2"
     >
       <p
         class="mm-box mm-text mm-text--body-md-medium mm-box--margin-bottom-2 mm-box--color-text-default"
       >
-        Enable smart contract account
+        Use smart account
       </p>
       <p
         class="mm-box mm-text mm-text--body-sm mm-box--color-text-alternative"
       >
-        You can enable smart account features on supported networks.
+        Unlock faster transactions, lower network fees, and added security on supported networks.
          
         <button
           class="mm-box mm-text mm-button-base mm-button-base--size-sm mm-button-link mm-text--body-md-medium mm-box--padding-0 mm-box--padding-right-0 mm-box--padding-left-0 mm-box--display-inline-flex mm-box--justify-content-center mm-box--align-items-center mm-box--color-primary-default mm-box--background-color-transparent"
@@ -30,16 +30,16 @@ exports[`SmartContractAccountToggleSection Disabled State Handling disables all 
       </p>
     </div>
     <div
-      class="mm-box"
+      class=""
     >
       <div
-        class="mm-box"
+        class=""
       >
         <div
-          class="mm-box mm-box--margin-top-4 mm-box--display-flex mm-box--justify-content-space-between"
+          class="flex flex-row justify-between mt-4"
         >
           <p
-            class="mm-box mm-text mm-text--body-md-medium mm-box--color-text-alternative"
+            class="text-alternative text-s-body-md leading-s-body-md tracking-s-body-md md:text-l-body-md md:leading-l-body-md md:tracking-l-body-md font-medium font-default"
           >
             Ethereum Mainnet
           </p>
@@ -51,7 +51,7 @@ exports[`SmartContractAccountToggleSection Disabled State Handling disables all 
               style="display: flex; width: 52px; align-items: center; justify-content: flex-start; position: relative; cursor: pointer; background-color: transparent; border: 0px; padding: 0px; user-select: none;"
             >
               <div
-                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(139, 153, 255);"
+                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(68, 89, 255);"
               >
                 <div
                   style="font-size: 11px; display: flex; align-items: center; justify-content: center; font-family: 'Helvetica Neue', Helvetica, sans-serif; position: relative; color: rgb(250, 250, 250); margin-top: auto; margin-bottom: auto; line-height: 0; opacity: 1; width: 26px; height: 20px; left: 4px;"
@@ -73,23 +73,13 @@ exports[`SmartContractAccountToggleSection Disabled State Handling disables all 
                 value="true"
               />
             </div>
-            <div
-              class="toggle-button__status"
-            >
-              <span
-                class="toggle-button__label-off"
-              />
-              <span
-                class="toggle-button__label-on"
-              />
-            </div>
           </label>
         </div>
         <div
-          class="mm-box mm-box--margin-top-4 mm-box--display-flex mm-box--justify-content-space-between"
+          class="flex flex-row justify-between mt-4"
         >
           <p
-            class="mm-box mm-text mm-text--body-md-medium mm-box--color-text-alternative"
+            class="text-alternative text-s-body-md leading-s-body-md tracking-s-body-md md:text-l-body-md md:leading-l-body-md md:tracking-l-body-md font-medium font-default"
           >
             Sepolia
           </p>
@@ -101,7 +91,7 @@ exports[`SmartContractAccountToggleSection Disabled State Handling disables all 
               style="display: flex; width: 52px; align-items: center; justify-content: flex-start; position: relative; cursor: pointer; background-color: transparent; border: 0px; padding: 0px; user-select: none;"
             >
               <div
-                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(75, 80, 92);"
+                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(186, 187, 190);"
               >
                 <div
                   style="font-size: 11px; display: flex; align-items: center; justify-content: center; font-family: 'Helvetica Neue', Helvetica, sans-serif; position: relative; color: rgb(250, 250, 250); margin-top: auto; margin-bottom: auto; line-height: 0; opacity: 0; width: 26px; height: 20px; left: 4px;"
@@ -123,16 +113,6 @@ exports[`SmartContractAccountToggleSection Disabled State Handling disables all 
                 value="false"
               />
             </div>
-            <div
-              class="toggle-button__status"
-            >
-              <span
-                class="toggle-button__label-off"
-              />
-              <span
-                class="toggle-button__label-on"
-              />
-            </div>
           </label>
         </div>
       </div>
@@ -144,21 +124,21 @@ exports[`SmartContractAccountToggleSection Disabled State Handling disables all 
 exports[`SmartContractAccountToggleSection Learn More Button opens Zendesk article when clicked 1`] = `
 <div>
   <div
-    class="mm-box mm-box--padding-top-3 mm-box--padding-right-2 mm-box--padding-bottom-4 mm-box--padding-left-4 mm-box--width-full mm-box--background-color-background-section"
+    class="pt-3 pr-2 pb-4 pl-4 bg-section w-full"
     style="border-radius: 8px;"
   >
     <div
-      class="mm-box mm-box--padding-right-2"
+      class="pr-2"
     >
       <p
         class="mm-box mm-text mm-text--body-md-medium mm-box--margin-bottom-2 mm-box--color-text-default"
       >
-        Enable smart contract account
+        Use smart account
       </p>
       <p
         class="mm-box mm-text mm-text--body-sm mm-box--color-text-alternative"
       >
-        You can enable smart account features on supported networks.
+        Unlock faster transactions, lower network fees, and added security on supported networks.
          
         <button
           class="mm-box mm-text mm-button-base mm-button-base--size-sm mm-button-link mm-text--body-md-medium mm-box--padding-0 mm-box--padding-right-0 mm-box--padding-left-0 mm-box--display-inline-flex mm-box--justify-content-center mm-box--align-items-center mm-box--color-primary-default mm-box--background-color-transparent"
@@ -171,10 +151,10 @@ exports[`SmartContractAccountToggleSection Learn More Button opens Zendesk artic
       </p>
     </div>
     <div
-      class="mm-box"
+      class=""
     >
       <div
-        class="mm-box"
+        class=""
       />
     </div>
   </div>
@@ -184,21 +164,21 @@ exports[`SmartContractAccountToggleSection Learn More Button opens Zendesk artic
 exports[`SmartContractAccountToggleSection Loading State shows loading spinner while fetching networks 1`] = `
 <div>
   <div
-    class="mm-box mm-box--padding-top-3 mm-box--padding-right-2 mm-box--padding-bottom-4 mm-box--padding-left-4 mm-box--width-full mm-box--background-color-background-section"
+    class="pt-3 pr-2 pb-4 pl-4 bg-section w-full"
     style="border-radius: 8px;"
   >
     <div
-      class="mm-box mm-box--padding-right-2"
+      class="pr-2"
     >
       <p
         class="mm-box mm-text mm-text--body-md-medium mm-box--margin-bottom-2 mm-box--color-text-default"
       >
-        Enable smart contract account
+        Use smart account
       </p>
       <p
         class="mm-box mm-text mm-text--body-sm mm-box--color-text-alternative"
       >
-        You can enable smart account features on supported networks.
+        Unlock faster transactions, lower network fees, and added security on supported networks.
          
         <button
           class="mm-box mm-text mm-button-base mm-button-base--size-sm mm-button-link mm-text--body-md-medium mm-box--padding-0 mm-box--padding-right-0 mm-box--padding-left-0 mm-box--display-inline-flex mm-box--justify-content-center mm-box--align-items-center mm-box--color-primary-default mm-box--background-color-transparent"
@@ -211,10 +191,10 @@ exports[`SmartContractAccountToggleSection Loading State shows loading spinner w
       </p>
     </div>
     <div
-      class="mm-box"
+      class=""
     >
       <div
-        class="mm-box mm-box--padding-top-12 mm-box--padding-bottom-12 mm-box--display-flex mm-box--justify-content-center mm-box--align-items-center"
+        class="items-center justify-center pt-12 pb-12 flex"
         data-testid="network-loader"
       >
         <svg
@@ -265,21 +245,21 @@ exports[`SmartContractAccountToggleSection Loading State shows loading spinner w
 exports[`SmartContractAccountToggleSection Network Integration displays toggle for each available network 1`] = `
 <div>
   <div
-    class="mm-box mm-box--padding-top-3 mm-box--padding-right-2 mm-box--padding-bottom-4 mm-box--padding-left-4 mm-box--width-full mm-box--background-color-background-section"
+    class="pt-3 pr-2 pb-4 pl-4 bg-section w-full"
     style="border-radius: 8px;"
   >
     <div
-      class="mm-box mm-box--padding-right-2"
+      class="pr-2"
     >
       <p
         class="mm-box mm-text mm-text--body-md-medium mm-box--margin-bottom-2 mm-box--color-text-default"
       >
-        Enable smart contract account
+        Use smart account
       </p>
       <p
         class="mm-box mm-text mm-text--body-sm mm-box--color-text-alternative"
       >
-        You can enable smart account features on supported networks.
+        Unlock faster transactions, lower network fees, and added security on supported networks.
          
         <button
           class="mm-box mm-text mm-button-base mm-button-base--size-sm mm-button-link mm-text--body-md-medium mm-box--padding-0 mm-box--padding-right-0 mm-box--padding-left-0 mm-box--display-inline-flex mm-box--justify-content-center mm-box--align-items-center mm-box--color-primary-default mm-box--background-color-transparent"
@@ -292,16 +272,16 @@ exports[`SmartContractAccountToggleSection Network Integration displays toggle f
       </p>
     </div>
     <div
-      class="mm-box"
+      class=""
     >
       <div
-        class="mm-box"
+        class=""
       >
         <div
-          class="mm-box mm-box--margin-top-4 mm-box--display-flex mm-box--justify-content-space-between"
+          class="flex flex-row justify-between mt-4"
         >
           <p
-            class="mm-box mm-text mm-text--body-md-medium mm-box--color-text-alternative"
+            class="text-alternative text-s-body-md leading-s-body-md tracking-s-body-md md:text-l-body-md md:leading-l-body-md md:tracking-l-body-md font-medium font-default"
           >
             Ethereum Mainnet
           </p>
@@ -313,7 +293,7 @@ exports[`SmartContractAccountToggleSection Network Integration displays toggle f
               style="display: flex; width: 52px; align-items: center; justify-content: flex-start; position: relative; cursor: pointer; background-color: transparent; border: 0px; padding: 0px; user-select: none;"
             >
               <div
-                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(139, 153, 255);"
+                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(68, 89, 255);"
               >
                 <div
                   style="font-size: 11px; display: flex; align-items: center; justify-content: center; font-family: 'Helvetica Neue', Helvetica, sans-serif; position: relative; color: rgb(250, 250, 250); margin-top: auto; margin-bottom: auto; line-height: 0; opacity: 1; width: 26px; height: 20px; left: 4px;"
@@ -335,23 +315,13 @@ exports[`SmartContractAccountToggleSection Network Integration displays toggle f
                 value="true"
               />
             </div>
-            <div
-              class="toggle-button__status"
-            >
-              <span
-                class="toggle-button__label-off"
-              />
-              <span
-                class="toggle-button__label-on"
-              />
-            </div>
           </label>
         </div>
         <div
-          class="mm-box mm-box--margin-top-4 mm-box--display-flex mm-box--justify-content-space-between"
+          class="flex flex-row justify-between mt-4"
         >
           <p
-            class="mm-box mm-text mm-text--body-md-medium mm-box--color-text-alternative"
+            class="text-alternative text-s-body-md leading-s-body-md tracking-s-body-md md:text-l-body-md md:leading-l-body-md md:tracking-l-body-md font-medium font-default"
           >
             Sepolia
           </p>
@@ -363,7 +333,7 @@ exports[`SmartContractAccountToggleSection Network Integration displays toggle f
               style="display: flex; width: 52px; align-items: center; justify-content: flex-start; position: relative; cursor: pointer; background-color: transparent; border: 0px; padding: 0px; user-select: none;"
             >
               <div
-                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(75, 80, 92);"
+                style="width: 40px; height: 24px; padding: 0px; border-radius: 26px; display: flex; align-items: center; justify-content: center; background-color: rgb(186, 187, 190);"
               >
                 <div
                   style="font-size: 11px; display: flex; align-items: center; justify-content: center; font-family: 'Helvetica Neue', Helvetica, sans-serif; position: relative; color: rgb(250, 250, 250); margin-top: auto; margin-bottom: auto; line-height: 0; opacity: 0; width: 26px; height: 20px; left: 4px;"
@@ -383,16 +353,6 @@ exports[`SmartContractAccountToggleSection Network Integration displays toggle f
                 style="border: 0px; height: 1px; margin: -1px; overflow: hidden; padding: 0px; position: absolute; width: 1px;"
                 type="checkbox"
                 value="false"
-              />
-            </div>
-            <div
-              class="toggle-button__status"
-            >
-              <span
-                class="toggle-button__label-off"
-              />
-              <span
-                class="toggle-button__label-on"
               />
             </div>
           </label>

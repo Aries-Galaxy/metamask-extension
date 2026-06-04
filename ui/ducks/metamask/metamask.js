@@ -6,23 +6,24 @@ import {
   GasEstimateTypes,
   NetworkCongestionThresholds,
 } from '../../../shared/constants/gas';
+import {
+  getTokensControllerAllTokens,
+  getCurrencyRateControllerCurrencyRates,
+  getCurrencyRateControllerCurrentCurrency,
+  getTokenBalancesControllerTokenBalances,
+} from '../../../shared/lib/selectors/assets-migration';
 import { KeyringType } from '../../../shared/constants/keyring';
 import { DEFAULT_AUTO_LOCK_TIME_LIMIT } from '../../../shared/constants/preferences';
-import { decGWEIToHexWEI } from '../../../shared/modules/conversion.utils';
-import { stripHexPrefix } from '../../../shared/modules/hexstring-utils';
-import { isEqualCaseInsensitive } from '../../../shared/modules/string-utils';
+import { decGWEIToHexWEI } from '../../../shared/lib/conversion.utils';
 import {
   accountsWithSendEtherInfoSelector,
   checkNetworkAndAccountSupports1559,
   getAddressBook,
 } from '../../selectors/selectors';
-import {
-  getProviderConfig,
-  getSelectedNetworkClientId,
-} from '../../../shared/modules/selectors/networks';
-import { getSelectedInternalAccount } from '../../selectors/accounts';
+import { getProviderConfig } from '../../../shared/lib/selectors/networks';
+import { getSelectedInternalAccount } from '../../../shared/lib/selectors/accounts';
 import * as actionConstants from '../../store/actionConstants';
-import { updateTransactionGasFees } from '../../store/actions';
+import { updateTransactionGasFees } from '../../store/actions/update-transaction-gas-fees';
 import { setCustomGasLimit, setCustomGasPrice } from '../gas/gas.duck';
 import { FirstTimeFlowType } from '../../../shared/constants/onboarding';
 
@@ -33,18 +34,14 @@ const initialState = {
   transactions: [],
   networkConfigurations: {},
   addressBook: [],
-  useBlockie: false,
   featureFlags: {},
   currentLocale: '',
-  currentBlockGasLimit: '',
-  currentBlockGasLimitByChainId: {},
   preferences: {
     autoLockTimeLimit: DEFAULT_AUTO_LOCK_TIME_LIMIT,
     showExtensionInFullSizeView: false,
     showFiatInTestnets: false,
     showTestNetworks: false,
     smartTransactionsOptInStatus: true,
-    petnamesEnabled: true,
     featureNotificationsEnabled: false,
     privacyMode: false,
     showMultiRpcModal: false,
@@ -61,6 +58,7 @@ const initialState = {
     },
   },
   throttledOrigins: {},
+  isSeedlessOnboardingUserAuthenticated: false,
 };
 
 /**
@@ -153,6 +151,14 @@ export default function reduceMetamask(state = initialState, action) {
       };
     }
 
+    case actionConstants.COMPLETE_ONBOARDING_WITH_SIDEPANEL: {
+      return {
+        ...metamaskState,
+        completedOnboarding: true,
+        openedWithSidepanel: true,
+      };
+    }
+
     case actionConstants.RESET_ONBOARDING: {
       return {
         ...metamaskState,
@@ -184,14 +190,10 @@ export default function reduceMetamask(state = initialState, action) {
         socialLoginEmail: undefined,
         authConnection: undefined,
         nodeAuthTokens: undefined,
+        passwordOutdatedCache: undefined,
+        isSeedlessOnboardingUserAuthenticated: false,
       };
     }
-
-    case actionConstants.SET_SHOW_SHIELD_ENTRY_MODAL_ONCE:
-      return {
-        ...metamaskState,
-        showShieldEntryModalOnce: action.payload,
-      };
 
     default:
       return metamaskState;
@@ -251,14 +253,14 @@ export const getUnconnectedAccountAlertShown = (state) =>
   state.metamask.unconnectedAccountAlertShownOrigins;
 
 export const getTokens = (state) => {
-  const { allTokens } = state.metamask;
+  const allTokens = getTokensControllerAllTokens(state);
   const { address: selectedAddress } = getSelectedInternalAccount(state);
   const { chainId } = getProviderConfig(state);
   return allTokens?.[chainId]?.[selectedAddress] || [];
 };
 
 export const getTokensByChainId = (state, chainId) => {
-  const { allTokens } = state.metamask;
+  const allTokens = getTokensControllerAllTokens(state);
   const { address: selectedAddress } = getSelectedInternalAccount(state);
   return allTokens?.[chainId]?.[selectedAddress] || [];
 };
@@ -305,26 +307,15 @@ export const getNftContracts = (state) => {
   return allNftContracts?.[selectedAddress]?.[chainId] ?? [];
 };
 
-export function getBlockGasLimit(state) {
-  return state.metamask.currentBlockGasLimit;
-}
-
 export function getNativeCurrency(state) {
   return getProviderConfig(state).ticker;
 }
 
-export function getConversionRate(state) {
-  return state.metamask.currencyRates[getProviderConfig(state).ticker]
-    ?.conversionRate;
-}
-
 export function getConversionRateByTicker(state, ticker) {
-  return state.metamask.currencyRates[ticker]?.conversionRate;
+  return getCurrencyRateControllerCurrencyRates(state)[ticker]?.conversionRate;
 }
 
-export function getCurrencyRates(state) {
-  return state.metamask.currencyRates;
-}
+export { getCurrencyRateControllerCurrencyRates as getCurrencyRates };
 
 export function getSendHexDataFeatureFlagState(state) {
   return state.metamask.featureFlags.sendHexData;
@@ -334,35 +325,6 @@ export function getSendToAccounts(state) {
   const fromAccounts = accountsWithSendEtherInfoSelector(state);
   const addressBookAccounts = getAddressBook(state);
   return [...fromAccounts, ...addressBookAccounts];
-}
-
-/**
- * Function returns true if network details are fetched and it is found to not support EIP-1559
- *
- * @param state
- */
-export function isNotEIP1559Network(state) {
-  const selectedNetworkClientId = getSelectedNetworkClientId(state);
-  return (
-    state.metamask.networksMetadata[selectedNetworkClientId].EIPS[1559] ===
-    false
-  );
-}
-
-/**
- * Function returns true if network details are fetched and it is found to support EIP-1559
- *
- * @param state
- * @param networkClientId - The optional network client ID to check for EIP-1559 support. Defaults to the currently selected network.
- */
-export function isEIP1559Network(state, networkClientId) {
-  const selectedNetworkClientId = getSelectedNetworkClientId(state);
-
-  return (
-    state.metamask.networksMetadata?.[
-      networkClientId ?? selectedNetworkClientId
-    ]?.EIPS[1559] === true
-  );
 }
 
 function getGasFeeControllerEstimateType(state) {
@@ -429,9 +391,7 @@ export const getGasEstimateTypeByChainId = createSelector(
  * @param {*} state
  * @returns { import('@metamask/assets-controllers').TokenBalancesControllerState['tokenBalances']}
  */
-export function getTokenBalances(state) {
-  return state.metamask.tokenBalances;
-}
+export { getTokenBalancesControllerTokenBalances as getTokenBalances };
 
 export const getGasFeeEstimatesByChainId = createSelector(
   getGasFeeControllerEstimatesByChainId,
@@ -529,8 +489,14 @@ export function getIsInitialized(state) {
   return state.metamask.isInitialized;
 }
 
-export function getIsUnlocked(state) {
-  return state.metamask.isUnlocked;
+/**
+ * This function checks if the wallet is currently being reset.
+ *
+ * @param {object} state
+ * @returns {boolean}
+ */
+export function getIsWalletResetInProgress(state) {
+  return state.metamask.isWalletResetInProgress;
 }
 
 export function getSeedPhraseBackedUp(state) {
@@ -565,49 +531,6 @@ export function getIsSeedlessPasswordOutdated(state) {
 }
 
 /**
- * Given the redux state object and an address, finds a keyring that contains that address, if one exists
- *
- * @param {object} state - the redux state object
- * @param {string} address - the address to search for among the keyring addresses
- * @returns {object | undefined} The keyring which contains the passed address, or undefined
- */
-export function findKeyringForAddress(state, address) {
-  const keyring = state.metamask.keyrings.find((kr) => {
-    return kr.accounts.some((account) => {
-      return (
-        isEqualCaseInsensitive(account, addHexPrefix(address)) ||
-        isEqualCaseInsensitive(account, stripHexPrefix(address))
-      );
-    });
-  });
-
-  return keyring;
-}
-
-/**
- * Given the redux state object, returns the users preferred ledger transport type
- *
- * @param {object} state - the redux state object
- * @returns {string} The users preferred ledger transport type. One of 'webhid' on chrome or 'u2f' on firefox
- */
-export function getLedgerTransportType(state) {
-  return state.metamask.ledgerTransportType;
-}
-
-/**
- * Given the redux state object and an address, returns a boolean indicating whether the passed address is part of a Ledger keyring
- *
- * @param {object} state - the redux state object
- * @param {string} address - the address to search for among all keyring addresses
- * @returns {boolean} true if the passed address is part of a ledger keyring, and false otherwise
- */
-export function isAddressLedger(state, address) {
-  const keyring = findKeyringForAddress(state, address);
-
-  return keyring?.type === KeyringType.ledger;
-}
-
-/**
  * Given the redux state object, returns a boolean indicating whether the user has any Ledger accounts added to MetaMask (i.e. Ledger keyrings
  * in state)
  *
@@ -620,12 +543,24 @@ export function doesUserHaveALedgerAccount(state) {
   });
 }
 
+export { getCurrencyRateControllerCurrentCurrency as getCurrentCurrency };
+
 /**
- * Select the current fiat currency code (ISO 4217 like 'USD').
+ * Returns a boolean indicating whether the user opened the extension with the sidepanel.
  *
- * @param {object} state - Redux state
- * @returns {string} The current fiat currency code
+ * @param {object} state - the redux state object
+ * @returns {boolean} true if the user opened the extension with the sidepanel, false otherwise
  */
-export function getCurrentCurrency(state) {
-  return state.metamask.currentCurrency;
+export function getOpenedWithSidepanel(state) {
+  return state.metamask.openedWithSidepanel;
+}
+
+/**
+ * When true, unlock UI must not auto-start WebAuthn passkey unlock (from background).
+ *
+ * @param {object} state - Redux root state
+ * @returns {boolean}
+ */
+export function getPasskeyAutoUnlockSuppressed(state) {
+  return Boolean(state.metamask.passkeyAutoUnlockSuppressed);
 }

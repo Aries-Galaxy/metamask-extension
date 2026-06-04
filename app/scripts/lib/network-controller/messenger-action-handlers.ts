@@ -1,12 +1,16 @@
 import log from 'loglevel';
+import type {
+  DegradedEventType,
+  RetryReason,
+} from '@metamask/network-controller';
 import { type Hex, hexToNumber, isObject, isValidJson } from '@metamask/utils';
 import {
   MetaMetricsEventCategory,
   MetaMetricsEventName,
 } from '../../../../shared/constants/metametrics';
 import { onlyKeepHost } from '../../../../shared/lib/only-keep-host';
-import { isPublicEndpointUrl } from '../../../../shared/lib/network-utils';
-import MetaMetricsController from '../../controllers/metametrics-controller';
+import { isPublicEndpointUrl } from '../util';
+import { MetaMetricsController } from '../../controllers/metametrics-controller';
 import { shouldCreateRpcServiceEvents } from './utils';
 
 /**
@@ -64,35 +68,59 @@ export function onRpcEndpointUnavailable({
  *
  * @param args - The arguments.
  * @param args.chainId - The chain ID that the endpoint represents.
+ * @param args.duration - The policy execution time in milliseconds when the
+ * request succeeded but was slow. `undefined` when retries were exhausted.
  * @param args.endpointUrl - The URL of the endpoint.
  * @param args.error - The connection or response error encountered after making
  * a request to the RPC endpoint.
  * @param args.infuraProjectId - Our Infura project ID.
  * @param args.metaMetricsId - The MetaMetrics ID of the user.
+ * @param args.retryReason - The category of error that was retried (only
+ * present when `type` is `'retries_exhausted'`).
+ * @param args.rpcMethodName - The JSON-RPC method that was being executed.
+ * @param args.traceId - The value of the `X-Trace-Id` response header from the
+ * last request attempt, or `undefined` if the header was not present.
  * @param args.trackEvent - The function that will create the Segment event.
+ * @param args.type - Why the endpoint became degraded (`'slow_success'` or
+ * `'retries_exhausted'`).
  */
 export function onRpcEndpointDegraded({
   chainId,
+  duration,
   endpointUrl,
   error,
   infuraProjectId,
   metaMetricsId,
+  retryReason,
+  rpcMethodName,
+  traceId,
   trackEvent,
+  type,
 }: {
   chainId: Hex;
+  duration?: number;
   endpointUrl: string;
   error: unknown;
   infuraProjectId: string;
   metaMetricsId: string | null | undefined;
+  retryReason?: RetryReason;
+  rpcMethodName: string;
+  traceId?: string;
   trackEvent: MetaMetricsController['trackEvent'];
+  type: DegradedEventType;
 }): void {
   trackRpcEndpointEvent(MetaMetricsEventName.RpcServiceDegraded, {
     chainId,
+    duration,
     endpointUrl,
     error,
     infuraProjectId,
     metaMetricsId,
+    retryReason,
+    rpcMethodName,
+    traceId,
     trackEvent,
+    type,
   });
 }
 
@@ -103,28 +131,49 @@ export function onRpcEndpointDegraded({
  * @param event - The Segment event to create.
  * @param args - The remaining arguments.
  * @param args.chainId - The chain ID that the endpoint represents.
+ * @param args.duration - The policy execution time in milliseconds when the
+ * request succeeded but was slow (only present for degraded events from a
+ * slow success).
  * @param args.endpointUrl - The URL of the endpoint.
  * @param args.error - The connection or response error encountered after making
  * a request to the RPC endpoint.
  * @param args.infuraProjectId - Our Infura project ID.
  * @param args.metaMetricsId - The MetaMetrics ID of the user.
+ * @param args.retryReason - The category of error that was retried (only
+ * present for degraded events when `type` is `'retries_exhausted'`).
+ * @param args.rpcMethodName - The JSON-RPC method that was being executed
+ * (only present for degraded events).
+ * @param args.traceId - The value of the `X-Trace-Id` response header from the
+ * last request attempt (only present for degraded events).
  * @param args.trackEvent - The function that will create the Segment event.
+ * @param args.type - Why the endpoint became degraded (only present for
+ * degraded events).
  */
 export function trackRpcEndpointEvent(
   event: string,
   {
     chainId,
+    duration,
     endpointUrl,
     error,
     infuraProjectId,
+    retryReason,
+    rpcMethodName,
+    traceId,
     trackEvent,
+    type,
     metaMetricsId,
   }: {
     chainId: Hex;
+    duration?: number;
     endpointUrl: string;
     error: unknown;
     infuraProjectId: string;
+    retryReason?: RetryReason;
+    rpcMethodName?: string;
+    traceId?: string;
     trackEvent: MetaMetricsController['trackEvent'];
+    type?: DegradedEventType;
     metaMetricsId: string | null | undefined;
   },
 ): void {
@@ -137,13 +186,21 @@ export function trackRpcEndpointEvent(
     return;
   }
 
+  const sanitizedUrl = isPublicEndpointUrl(endpointUrl, infuraProjectId)
+    ? onlyKeepHost(endpointUrl)
+    : 'custom';
+
   // The names of Segment properties have a particular case.
   /* eslint-disable @typescript-eslint/naming-convention */
   const properties = {
     chain_id_caip: `eip155:${hexToNumber(chainId)}`,
-    rpc_endpoint_url: isPublicEndpointUrl(endpointUrl, infuraProjectId)
-      ? onlyKeepHost(endpointUrl)
-      : 'custom',
+    rpc_domain: sanitizedUrl,
+    rpc_endpoint_url: sanitizedUrl, // @deprecated - Will be removed in a future release.
+    ...(rpcMethodName ? { rpc_method_name: rpcMethodName } : {}),
+    ...(type ? { type } : {}),
+    ...(retryReason ? { retry_reason: retryReason } : {}),
+    ...(duration === undefined ? {} : { duration_ms: duration }),
+    ...(traceId === undefined ? {} : { trace_id: traceId }),
     ...(isObject(error) &&
     'httpStatus' in error &&
     isValidJson(error.httpStatus)

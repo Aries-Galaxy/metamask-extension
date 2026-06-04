@@ -1,14 +1,14 @@
 import React, { useContext, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { useHistory } from 'react-router-dom';
-import classnames from 'classnames';
+import { useNavigate } from 'react-router-dom';
+import classnames from 'clsx';
 import { getNativeTokenAddress } from '@metamask/assets-controllers';
 import { type Hex } from '@metamask/utils';
+import { type KeyringAccountType } from '@metamask/keyring-api';
 import {
   AlignItems,
   BackgroundColor,
   BlockSize,
-  BorderRadius,
   Display,
   FlexDirection,
   FontWeight,
@@ -18,6 +18,8 @@ import {
   TextColor,
   TextVariant,
 } from '../../../helpers/constants/design-system';
+import { TokenInsightsModal } from '../../../pages/bridge/token-insights-modal';
+import { useRWAToken } from '../../../pages/bridge/hooks/useRWAToken';
 import {
   AvatarNetwork,
   AvatarNetworkSize,
@@ -36,9 +38,13 @@ import {
   ModalOverlay,
   SensitiveText,
   SensitiveTextLength,
+  Tag,
   Text,
 } from '../../component-library';
+import { MarketClosedModal } from '../../app/assets/market-closed-modal';
+import { StockBadge } from '../../app/assets/stock-badge/stock-badge';
 import { getMarketData, getCurrencyRates } from '../../../selectors';
+
 import { getMultichainIsEvm } from '../../../selectors/multichain';
 import Tooltip from '../../ui/tooltip';
 import { useI18nContext } from '../../../hooks/useI18nContext';
@@ -54,8 +60,10 @@ import {
 import { NETWORKS_ROUTE } from '../../../helpers/constants/routes';
 import { setEditedNetwork } from '../../../store/actions';
 import { NETWORK_TO_SHORT_NETWORK_NAME_MAP } from '../../../../shared/constants/bridge';
-import { getNetworkConfigurationsByChainId } from '../../../../shared/modules/selectors/networks';
+import { getNetworkConfigurationsByChainId } from '../../../../shared/lib/selectors/networks';
 import { selectNoFeeAssets } from '../../../ducks/bridge/selectors';
+import { ACCOUNT_TYPE_LABELS } from '../../app/assets/constants';
+import { TokenWithFiatAmount } from '../../app/assets/types';
 import { PercentageChange } from './price/percentage-change/percentage-change';
 import { StakeableLink } from './stakeable-link';
 
@@ -79,6 +87,8 @@ type TokenListItemProps = {
   privacyMode?: boolean;
   nativeCurrencySymbol?: string;
   isDestinationToken?: boolean;
+  accountType?: KeyringAccountType;
+  rwaData?: TokenWithFiatAmount['rwaData'];
 };
 
 export const TokenListItemComponent = ({
@@ -98,13 +108,15 @@ export const TokenListItemComponent = ({
   isTitleHidden = false,
   address = null,
   showPercentage = false,
+  accountType,
   privacyMode = false,
   nativeCurrencySymbol,
   isDestinationToken = false,
+  rwaData,
 }: TokenListItemProps) => {
   const t = useI18nContext();
   const isEvm = useSelector(getMultichainIsEvm);
-  const trackEvent = useContext(MetaMetricsContext);
+  const { trackEvent } = useContext(MetaMetricsContext);
   const currencyRates = useSelector(getCurrencyRates);
   const noFeeAssets = useSelector((state) => selectNoFeeAssets(state, chainId));
 
@@ -120,7 +132,9 @@ export const TokenListItemComponent = ({
 
   const dispatch = useDispatch();
   const [showScamWarningModal, setShowScamWarningModal] = useState(false);
-  const history = useHistory();
+  const navigate = useNavigate();
+  const [showTokenInsights, setShowTokenInsights] = useState(false);
+  const [showMarketClosedModal, setShowMarketClosedModal] = useState(false);
 
   const getTokenTitle = () => {
     if (isTitleNetworkName) {
@@ -146,7 +160,8 @@ export const TokenListItemComponent = ({
   const multiChainMarketData = useSelector(getMarketData);
 
   const tokenPercentageChange = address
-    ? multiChainMarketData?.[chainId]?.[address]?.pricePercentChange1d
+    ? multiChainMarketData?.[chainId as Hex]?.[address as Hex]
+        ?.pricePercentChange1d
     : null;
 
   const tokenTitle = getTokenTitle();
@@ -157,6 +172,9 @@ export const TokenListItemComponent = ({
     isDestinationToken &&
     address &&
     noFeeAssets?.includes(address.toLowerCase());
+  const { isStockToken: checkIsStockToken, isTokenTradingOpen } = useRWAToken();
+  const rwaToken = { rwaData };
+  const isRWAToken = checkIsStockToken(rwaToken);
 
   // Used for badge icon
   const allNetworks = useSelector(getNetworkConfigurationsByChainId);
@@ -194,7 +212,12 @@ export const TokenListItemComponent = ({
           onClick: (e: React.MouseEvent<HTMLAnchorElement, MouseEvent>) => {
             e.preventDefault();
 
-            if (showScamWarningModal) {
+            if (showScamWarningModal || showMarketClosedModal) {
+              return;
+            }
+
+            if (isRWAToken && !isTokenTradingOpen(rwaToken)) {
+              setShowMarketClosedModal(true);
               return;
             }
 
@@ -279,32 +302,13 @@ export const TokenListItemComponent = ({
                   )}
                 </Text>
               )}
-              {isNoFeeAsset && (
-                <Box
-                  backgroundColor={BackgroundColor.backgroundSection}
-                  borderRadius={BorderRadius.SM}
-                  paddingInline={1}
-                  paddingTop={0}
-                  paddingBottom={0}
-                  style={{
-                    height: '20px',
-                    display: 'flex',
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text
-                    variant={TextVariant.bodySm}
-                    fontWeight={FontWeight.Medium}
-                    color={TextColor.textAlternative}
-                    style={{
-                      lineHeight: '20px',
-                      whiteSpace: 'nowrap',
-                    }}
-                  >
-                    {t('bridgeNoMMFee')}
-                  </Text>
-                </Box>
+              {accountType && ACCOUNT_TYPE_LABELS[accountType] && (
+                <Tag label={ACCOUNT_TYPE_LABELS[accountType]} />
               )}
+              {isRWAToken ? (
+                <StockBadge isMarketClosed={!isTokenTradingOpen(rwaToken)} />
+              ) : null}
+              {isNoFeeAsset && <Tag label={t('bridgeNoMMFee')} />}
             </Box>
 
             {showScamWarning ? (
@@ -347,7 +351,7 @@ export const TokenListItemComponent = ({
               <PercentageChange
                 value={
                   isNativeCurrency
-                    ? multiChainMarketData?.[chainId]?.[
+                    ? multiChainMarketData?.[chainId as Hex]?.[
                         getNativeTokenAddress(chainId as Hex)
                       ]?.pricePercentChange1d
                     : tokenPercentageChange
@@ -394,6 +398,21 @@ export const TokenListItemComponent = ({
             )}
           </Box>
         </Box>
+
+        {isDestinationToken && (
+          <ButtonIcon
+            iconName={IconName.Info}
+            size={ButtonIconSize.Sm}
+            onClick={(e: React.MouseEvent) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setShowTokenInsights(true);
+            }}
+            className="multichain-token-list-item__info-icon"
+            color={IconColor.iconAlternative}
+            ariaLabel={t('viewTokenDetails')}
+          />
+        )}
       </Box>
       {isEvm && showScamWarningModal ? (
         <Modal isOpen onClose={() => setShowScamWarningModal(false)}>
@@ -415,7 +434,7 @@ export const TokenListItemComponent = ({
               <ButtonSecondary
                 onClick={() => {
                   dispatch(setEditedNetwork({ chainId }));
-                  history.push(NETWORKS_ROUTE);
+                  navigate(NETWORKS_ROUTE);
                 }}
                 block
               >
@@ -425,6 +444,27 @@ export const TokenListItemComponent = ({
           </ModalContent>
         </Modal>
       ) : null}
+
+      {showMarketClosedModal && (
+        <MarketClosedModal
+          isOpen={showMarketClosedModal}
+          onClose={() => setShowMarketClosedModal(false)}
+        />
+      )}
+
+      {showTokenInsights && (
+        <TokenInsightsModal
+          isOpen={showTokenInsights}
+          onClose={() => setShowTokenInsights(false)}
+          token={{
+            address,
+            symbol: tokenSymbol || title,
+            name: title,
+            chainId,
+            iconUrl: tokenImage,
+          }}
+        />
+      )}
     </Box>
   );
 };

@@ -1,22 +1,10 @@
 import React from 'react';
 import { useSelector } from 'react-redux';
-import classnames from 'classnames';
+import classnames from 'clsx';
 import { MULTICHAIN_NETWORK_DECIMAL_PLACES } from '@metamask/multichain-network-controller';
-import {
-  AlignItems,
-  Display,
-  FlexWrap,
-  IconColor,
-  JustifyContent,
-  TextVariant,
-} from '../../../helpers/constants/design-system';
-import {
-  Box,
-  ButtonIcon,
-  ButtonIconSize,
-  IconName,
-  SensitiveText,
-} from '../../component-library';
+import { Box, BoxAlignItems, BoxFlexWrap } from '@metamask/design-system-react';
+import { TextVariant } from '../../../helpers/constants/design-system';
+import { SensitiveText } from '../../component-library';
 import {
   getCurrentCurrency,
   getTokenBalances,
@@ -29,11 +17,10 @@ import {
 } from '../../../selectors/assets';
 import {
   getEnabledNetworksByNamespace,
-  getPreferences,
-  getSelectedInternalAccount,
-  isGlobalNetworkSelectorRemoved,
   selectAnyEnabledNetworksAreAvailable,
 } from '../../../selectors';
+import { getPreferences } from '../../../../shared/lib/selectors/preferences';
+import { getSelectedInternalAccount } from '../../../../shared/lib/selectors/accounts';
 import {
   getMultichainNetwork,
   getMultichainShouldShowFiat,
@@ -69,9 +56,8 @@ export const AggregatedBalance = ({
     selectAnyEnabledNetworksAreAvailable,
   );
 
-  const showNativeTokenAsMain = isGlobalNetworkSelectorRemoved
-    ? showNativeTokenAsMainBalance && Object.keys(enabledNetworks).length === 1
-    : showNativeTokenAsMainBalance;
+  const showNativeTokenAsMain =
+    showNativeTokenAsMainBalance && Object.keys(enabledNetworks).length === 1;
 
   const multichainNativeTokenBalance = useSelector((state) =>
     getMultichainNativeTokenBalance(state, selectedAccount),
@@ -117,19 +103,20 @@ export const AggregatedBalance = ({
       marginBottom={1}
     >
       <Box
-        className={classnames(`${classPrefix}-overview__primary-balance`, {
+        className={classnames(`flex ${classPrefix}-overview__primary-balance`, {
           [`${classPrefix}-overview__cached-balance`]: balanceIsCached,
         })}
         data-testid={`${classPrefix}-overview__primary-currency`}
-        display={Display.Flex}
-        alignItems={AlignItems.center}
-        flexWrap={FlexWrap.Wrap}
+        alignItems={BoxAlignItems.Center}
+        flexWrap={BoxFlexWrap.Wrap}
       >
         <SensitiveText
           ellipsis
           variant={TextVariant.inherit}
           isHidden={privacyMode}
           data-testid="account-value-and-suffix"
+          onClick={handleSensitiveToggle}
+          className="cursor-pointer transition-colors duration-200 hover:text-text-alternative"
         >
           {showNativeTokenAsMain || !isNonEvmRatesAvailable || !shouldShowFiat
             ? formattedTokenDisplay
@@ -139,22 +126,13 @@ export const AggregatedBalance = ({
           marginInlineStart={privacyMode ? 0 : 1}
           variant={TextVariant.inherit}
           isHidden={privacyMode}
+          onClick={handleSensitiveToggle}
+          className="cursor-pointer transition-colors duration-200 hover:text-text-alternative"
         >
           {showNativeTokenAsMain || !isNonEvmRatesAvailable || !shouldShowFiat
             ? currentNetwork.network.ticker
             : currentCurrency.toUpperCase()}
         </SensitiveText>
-
-        <ButtonIcon
-          color={IconColor.iconAlternative}
-          marginLeft={2}
-          size={ButtonIconSize.Md}
-          onClick={handleSensitiveToggle}
-          iconName={privacyMode ? IconName.EyeSlash : IconName.Eye}
-          justifyContent={JustifyContent.center}
-          ariaLabel="Sensitive toggle"
-          data-testid="sensitive-toggle"
-        />
       </Box>
     </Skeleton>
   );

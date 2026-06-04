@@ -1,12 +1,14 @@
 import assert from 'assert';
 import { Mockttp, MockedEndpoint } from 'mockttp';
 import { withFixtures, regularDelayMs } from '../../helpers';
-import FixtureBuilder from '../../fixture-builder';
+import FixtureBuilderV2 from '../../fixtures/fixture-builder-v2';
+import { NETWORK_CLIENT_ID } from '../../constants';
 import HomePage from '../../page-objects/pages/home/homepage';
 import OnboardingCompletePage from '../../page-objects/pages/onboarding/onboarding-complete-page';
 import {
   importSRPOnboardingFlow,
   createNewWalletOnboardingFlow,
+  handleSidepanelPostOnboarding,
 } from '../../page-objects/flows/onboarding.flow';
 
 // Mock function implementation for Infura requests
@@ -83,8 +85,8 @@ describe('MetaMask onboarding', function () {
   it("doesn't make any network requests to infura before create new wallet onboarding is completed", async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder({ onboarding: true })
-          .withNetworkControllerOnMainnet()
+        fixtures: new FixtureBuilderV2({ onboarding: true })
+          .withSelectedNetwork(NETWORK_CLIENT_ID.MAINNET)
           .build(),
         title: this.test?.fullTitle(),
         testSpecificMock: mockInfura,
@@ -114,6 +116,10 @@ describe('MetaMask onboarding', function () {
         const onboardingCompletePage = new OnboardingCompletePage(driver);
         await onboardingCompletePage.checkPageIsLoaded();
         await onboardingCompletePage.completeOnboarding();
+
+        // Handle sidepanel navigation if needed
+        await handleSidepanelPostOnboarding(driver);
+
         const homePage = new HomePage(driver);
         await homePage.checkPageIsLoaded();
 
@@ -138,8 +144,8 @@ describe('MetaMask onboarding', function () {
   it("doesn't make any network requests to infura before onboarding by import is completed", async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder({ onboarding: true })
-          .withNetworkControllerOnMainnet()
+        fixtures: new FixtureBuilderV2({ onboarding: true })
+          .withSelectedNetwork(NETWORK_CLIENT_ID.MAINNET)
           .build(),
         title: this.test?.fullTitle(),
         testSpecificMock: mockInfura,
@@ -163,6 +169,10 @@ describe('MetaMask onboarding', function () {
         const onboardingCompletePage = new OnboardingCompletePage(driver);
         await onboardingCompletePage.checkPageIsLoaded();
         await onboardingCompletePage.completeOnboarding();
+
+        // Handle sidepanel navigation if needed
+        await handleSidepanelPostOnboarding(driver);
+
         const homePage = new HomePage(driver);
         await homePage.checkPageIsLoaded();
 
@@ -171,7 +181,7 @@ describe('MetaMask onboarding', function () {
           await driver.wait(async () => {
             const isPending = await mockedEndpoint.isPending();
             return isPending === false;
-          }, driver.timeout);
+          }, 20000);
 
           const requests = await mockedEndpoint.getSeenRequests();
           assert.equal(

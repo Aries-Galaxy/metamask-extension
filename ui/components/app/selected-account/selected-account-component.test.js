@@ -2,7 +2,7 @@ import React from 'react';
 import configureMockStore from 'redux-mock-store';
 import copyToClipboard from 'copy-to-clipboard';
 import { fireEvent, waitFor } from '@testing-library/react';
-import { renderWithProvider } from '../../../../test/lib/render-helpers';
+import { renderWithProvider } from '../../../../test/lib/render-helpers-navigate';
 import mockState from '../../../../test/data/mock-state.json';
 import { COPY_OPTIONS } from '../../../../shared/constants/copy';
 import SelectedAccount from '.';
@@ -43,6 +43,10 @@ jest.mock('../../../selectors', () => {
 
 jest.mock('../../../selectors/multi-srp/multi-srp', () => ({
   getShouldShowSeedPhraseReminder: () => false,
+}));
+jest.mock('../../../../shared/lib/selectors/keyring', () => ({
+  ...jest.requireActual('../../../../shared/lib/selectors/keyring'),
+  getAccountType: jest.fn(),
 }));
 
 describe('SelectedAccount Component', () => {

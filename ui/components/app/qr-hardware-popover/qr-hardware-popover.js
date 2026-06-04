@@ -10,6 +10,11 @@ import {
   rejectPendingApproval,
   cancelQrCodeScan,
 } from '../../../store/actions';
+import { getEnvironmentType } from '../../../../shared/lib/environment-type';
+import {
+  ENVIRONMENT_TYPE_POPUP,
+  ENVIRONMENT_TYPE_SIDEPANEL,
+} from '../../../../shared/constants/app';
 import QRHardwareWalletImporter from './qr-hardware-wallet-importer';
 import QRHardwareSignRequest from './qr-hardware-sign-request';
 
@@ -17,6 +22,11 @@ const QRHardwarePopover = () => {
   const t = useI18nContext();
 
   const activeScanRequest = useSelector(getActiveQrCodeScanRequest);
+
+  const environmentType = getEnvironmentType();
+  const isRestrictedEnv =
+    environmentType === ENVIRONMENT_TYPE_POPUP ||
+    environmentType === ENVIRONMENT_TYPE_SIDEPANEL;
   const [errorTitle, setErrorTitle] = useState('');
 
   const { txData } = useSelector((state) => {
@@ -27,7 +37,6 @@ const QRHardwarePopover = () => {
   // we want to block the changing by sign request id;
   const _txData = useMemo(() => {
     return txData;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeScanRequest?.requestId]);
 
   const dispatch = useDispatch();
@@ -59,6 +68,14 @@ const QRHardwarePopover = () => {
     }
     return '';
   }, [activeScanRequest, t, errorTitle]);
+
+  // PAIR requests are always handled in a fullscreen tab opened by the
+  // add-wallet-modal. Rendering in sidepanel/popup would cause BaseReader's
+  // checkEnvironment() to open a duplicate fullscreen tab, stealing focus
+  // from the tab that shows the "Select an account" list after scanning.
+  if (isRestrictedEnv && activeScanRequest?.type === QrScanRequestType.PAIR) {
+    return null;
+  }
 
   return activeScanRequest ? (
     <Popover

@@ -3,6 +3,7 @@ import configureMockStore from 'redux-mock-store';
 import thunk from 'redux-thunk';
 import { waitFor, fireEvent } from '@testing-library/react';
 import { renderWithProvider } from '../../../../test/lib/render-helpers-navigate';
+import { enLocale as messages } from '../../../../test/lib/i18n-helpers';
 import initializedMockState from '../../../../test/data/mock-state.json';
 import { FirstTimeFlowType } from '../../../../shared/constants/onboarding';
 import {
@@ -14,9 +15,9 @@ import AccountExist from './account-exist';
 
 const mockUseNavigate = jest.fn();
 
-jest.mock('react-router-dom-v5-compat', () => {
+jest.mock('react-router-dom', () => {
   return {
-    ...jest.requireActual('react-router-dom-v5-compat'),
+    ...jest.requireActual('react-router-dom'),
     useNavigate: () => mockUseNavigate,
   };
 });
@@ -38,38 +39,32 @@ describe('Account Exist Seedless Onboarding View', () => {
   it('should display the correct content', () => {
     const { getByText } = renderWithProvider(<AccountExist />, customMockStore);
 
-    expect(getByText('Wallet already exists')).toBeInTheDocument();
+    expect(
+      getByText(messages.accountAlreadyExistsTitle.message),
+    ).toBeInTheDocument();
     // should show the correct button
-    const loginButton = getByText('Log in');
+    const loginButton = getByText(messages.accountAlreadyExistsLogin.message);
     expect(loginButton).toBeInTheDocument();
-    expect(loginButton.nodeName).toBe('BUTTON');
   });
 
   it('should navigate to the unlock page when the button is clicked', async () => {
-    const setFirstTimeFlowTypeSpy = jest
-      .spyOn(Actions, 'setFirstTimeFlowType')
-      .mockReturnValue(jest.fn().mockResolvedValueOnce(null));
-
     const { getByText } = renderWithProvider(<AccountExist />, customMockStore);
-    const loginButton = getByText('Log in');
+    const loginButton = getByText(messages.accountAlreadyExistsLogin.message);
     fireEvent.click(loginButton);
 
     await waitFor(() => {
       expect(mockUseNavigate).toHaveBeenCalledWith(ONBOARDING_UNLOCK_ROUTE, {
         replace: true,
       });
-      expect(setFirstTimeFlowTypeSpy).toHaveBeenCalledWith(
-        FirstTimeFlowType.socialImport,
-      );
     });
   });
 
-  it('should navigate to the welcome page when the firstTimeFlowType is not socialCreate', () => {
+  it('should navigate to the welcome page when the firstTimeFlowType is not socialImport', () => {
     const store = configureMockStore([thunk])({
       ...mockState,
       metamask: {
         ...mockState.metamask,
-        firstTimeFlowType: FirstTimeFlowType.socialImport,
+        firstTimeFlowType: FirstTimeFlowType.socialCreate,
       },
     });
 

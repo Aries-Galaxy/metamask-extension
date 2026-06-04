@@ -5,8 +5,12 @@ import {
   TransactionMeta,
 } from '@metamask/transaction-controller';
 import { cloneDeep } from 'lodash';
-import { Messenger } from '@metamask/base-controller';
-import { TransactionControllerInitMessenger } from '../../../controller-init/messengers/transaction-controller-messenger';
+import {
+  MOCK_ANY_NAMESPACE,
+  Messenger,
+  MockAnyNamespace,
+} from '@metamask/messenger';
+import { TransactionControllerInitMessenger } from '../../../messenger-client-init/messengers/transaction-controller-messenger';
 import {
   applyTransactionContainers,
   applyTransactionContainersExisting,
@@ -33,10 +37,13 @@ describe('Container Utils', () => {
     jest.resetAllMocks();
 
     const baseMessenger = new Messenger<
+      MockAnyNamespace,
       | TransactionControllerEstimateGasAction
       | TransactionControllerGetStateAction,
       never
-    >();
+    >({
+      namespace: MOCK_ANY_NAMESPACE,
+    });
 
     baseMessenger.registerActionHandler(
       'TransactionController:estimateGas',
@@ -48,13 +55,22 @@ describe('Container Utils', () => {
       getTransactionControllerStateMock,
     );
 
-    messenger = baseMessenger.getRestricted({
-      name: 'TransactionControllerInitMessenger',
-      allowedActions: [
+    messenger = new Messenger<
+      'TransactionControllerInitMessenger',
+      | TransactionControllerEstimateGasAction
+      | TransactionControllerGetStateAction,
+      never,
+      typeof baseMessenger
+    >({
+      namespace: 'TransactionControllerInitMessenger',
+      parent: baseMessenger,
+    });
+    baseMessenger.delegate({
+      messenger,
+      actions: [
         'TransactionController:estimateGas',
         'TransactionController:getState',
       ],
-      allowedEvents: [],
     });
 
     enforceSimulationsMock.mockResolvedValue({
@@ -150,6 +166,32 @@ describe('Container Utils', () => {
           containerTypes: [TransactionContainerType.EnforcedSimulations],
           data: NEW_DATA_MOCK,
           gas: ESTIMATE_GAS_MOCK,
+        }),
+      );
+    });
+
+    it('defaults data to 0x when undefined after unwrapping', async () => {
+      enforceSimulationsMock.mockResolvedValue({
+        updateTransaction: jest.fn(),
+      });
+
+      getTransactionControllerStateMock.mockReturnValue({
+        transactions: [TRANSACTION_META_MOCK],
+      });
+
+      const updateEditableParams = jest.fn();
+
+      await applyTransactionContainersExisting({
+        containerTypes: [TransactionContainerType.EnforcedSimulations],
+        transactionId: TRANSACTION_ID_MOCK,
+        messenger,
+        updateEditableParams,
+      });
+
+      expect(updateEditableParams).toHaveBeenCalledWith(
+        TRANSACTION_ID_MOCK,
+        expect.objectContaining({
+          data: '0x',
         }),
       );
     });

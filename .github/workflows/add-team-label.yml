@@ -7,7 +7,32 @@ on:
 
 jobs:
   add-team-label:
-    if: ${{ !github.event.pull_request.head.repo.fork }}
-    uses: metamask/github-tools/.github/workflows/add-team-label.yml@7fe185fdb0e60981c898e88d82e44ff33f604daa
-    secrets:
-      TEAM_LABEL_TOKEN: ${{ secrets.TEAM_LABEL_TOKEN }}
+    name: Add team label
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      id-token: write
+    steps:
+      - name: Get planning token
+        id: planning-token
+        uses: MetaMask/github-tools/.github/actions/get-token@v1
+        with:
+          token-exchange-url: ${{ vars.TOKEN_EXCHANGE_URL }}
+          target-repository: MetaMask/MetaMask-planning
+          permissions: |
+            contents: read
+
+      - name: Get label token
+        id: label-token
+        uses: MetaMask/github-tools/.github/actions/get-token@v1
+        with:
+          token-exchange-url: ${{ vars.TOKEN_EXCHANGE_URL }}
+          permissions: |
+            contents: read
+            pull_requests: write
+
+      - name: Add team label
+        uses: MetaMask/github-tools/.github/actions/add-team-label@v1
+        with:
+          planning-token: ${{ steps.planning-token.outputs.token }}
+          team-label-token: ${{ steps.label-token.outputs.token }}

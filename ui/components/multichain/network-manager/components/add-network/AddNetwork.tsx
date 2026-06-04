@@ -1,8 +1,8 @@
 import { UpdateNetworkFields } from '@metamask/network-controller';
 import React from 'react';
-import { useHistory } from 'react-router-dom';
-import { NetworksForm } from '../../../../../pages/settings/networks-tab/networks-form/networks-form';
-import { useNetworkFormState } from '../../../../../pages/settings/networks-tab/networks-form/networks-form-state';
+import { useSearchParams } from 'react-router-dom';
+import { NetworksForm } from '../../../networks-form/networks-form';
+import { useNetworkFormState } from '../../../networks-form/networks-form-state';
 
 type AddNetworkProps = {
   networkFormState: ReturnType<typeof useNetworkFormState>;
@@ -10,29 +10,31 @@ type AddNetworkProps = {
   isEdit?: boolean;
 };
 
-export const AddNetwork: React.FC<AddNetworkProps> = ({
+export const AddNetwork = ({
   networkFormState,
   network,
   isEdit = false,
-}) => {
-  const history = useHistory();
+}: AddNetworkProps) => {
+  const [, setSearchParams] = useSearchParams();
   return (
     <NetworksForm
       toggleNetworkMenuAfterSubmit={false}
+      usePageFooterStyle={true}
       onComplete={() => {
-        console.log(`onComplete pushing to /?tab=custom-networks`);
-        history.push('/?tab=custom-networks');
+        setSearchParams({});
       }}
       onEdit={() => {
-        history.push('/edit');
+        setSearchParams({ view: 'edit' });
       }}
       networkFormState={networkFormState}
       existingNetwork={network}
       onRpcAdd={() => {
-        history.push(isEdit ? '/edit-rpc' : '/add-rpc');
+        setSearchParams({ view: isEdit ? 'edit-rpc' : 'add-rpc' });
       }}
       onBlockExplorerAdd={() => {
-        history.push(isEdit ? '/edit-explorer-url' : '/add-explorer-url');
+        setSearchParams({
+          view: isEdit ? 'edit-explorer-url' : 'add-explorer-url',
+        });
       }}
     />
   );

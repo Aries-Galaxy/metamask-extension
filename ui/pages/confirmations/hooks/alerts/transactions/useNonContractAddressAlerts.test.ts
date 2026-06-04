@@ -5,19 +5,18 @@ import {
   TransactionType,
 } from '@metamask/transaction-controller';
 import { waitFor } from '@testing-library/react';
-import { useContext } from 'react';
 import { useSelector } from 'react-redux';
-import { useLocation } from 'react-router-dom';
-
-import { getNetworkConfigurationsByChainId } from '../../../../../../shared/modules/selectors/networks';
+import { getNetworkConfigurationsByChainId } from '../../../../../../shared/lib/selectors/networks';
 import { getMockConfirmStateForTransaction } from '../../../../../../test/data/confirmations/helper';
 import { genUnapprovedContractInteractionConfirmation } from '../../../../../../test/data/confirmations/contract-interaction';
 import { renderHookWithConfirmContextProvider } from '../../../../../../test/lib/confirmations/render-helpers';
 import { RowAlertKey } from '../../../../../components/app/confirm/info/row/constants';
-import { I18nContext } from '../../../../../contexts/i18n';
 import { Severity } from '../../../../../helpers/constants/design-system';
-import { selectPendingApprovalsForNavigation } from '../../../../../selectors';
-import { ConfirmContext } from '../../../context/confirm';
+import {
+  getUnapprovedTransaction,
+  selectPendingApprovalsForNavigation,
+} from '../../../../../selectors';
+import { selectSmartTransactions } from '../../../../../selectors/toast';
 import { useNonContractAddressAlerts } from './useNonContractAddressAlerts';
 import { useContractCode } from './useContractCode';
 
@@ -27,32 +26,31 @@ jest.mock('react-redux', () => ({
   useDispatch: jest.fn(),
 }));
 
-const messageIdMock = '12345';
-
-jest.mock('react-router-dom', () => ({
-  ...jest.requireActual('react-router-dom'),
-  useParams: () => ({
-    id: messageIdMock,
-  }),
-  useLocation: jest.fn(),
-}));
-
-jest.mock('react', () => ({
-  ...jest.requireActual('react'),
-  useContext: jest.fn(),
+const mockGetUnapprovedTransaction = jest.fn();
+jest.mock('../../../../../selectors', () => ({
+  ...jest.requireActual('../../../../../selectors'),
+  getUnapprovedTransaction: (...args: unknown[]) =>
+    mockGetUnapprovedTransaction(...args),
 }));
 
 jest.mock('./useContractCode', () => ({
   useContractCode: jest.fn(),
 }));
-
 jest.mock('./NonContractAddressAlertMessage', () => ({
   NonContractAddressAlertMessage: () => 'NonContractAddressAlertMessage',
+}));
+
+jest.mock('../../../../../hooks/useI18nContext', () => ({
+  useI18nContext: () => (key: string) => key,
 }));
 
 const TRANSACTION_ID_MOCK = '123-456';
 const ACCOUNT_ADDRESS_MOCK = '0x0dcd5d886577d5081b0c52e242ef29e70be3e7bc';
 const ACCOUNT_ADDRESS_2_MOCK = '0x2e0d7e8c45221fca00d74a3609a0f7097035d09b';
+const ACCOUNT_HARDWARE_INFO_MOCK = {
+  keyringType: 'HD Key Tree',
+  address: ACCOUNT_ADDRESS_MOCK,
+};
 
 const TRANSACTION_META_MOCK = {
   id: TRANSACTION_ID_MOCK,
@@ -85,17 +83,11 @@ function runHook({
 }
 
 describe('useNonContractAddressAlerts', () => {
-  const useContextMock = useContext as jest.Mock;
   const useSelectorMock = useSelector as jest.Mock;
   const mockUseContractCode = jest.mocked(useContractCode);
-  const useLocationMock = jest.mocked(useLocation);
 
   beforeEach(() => {
     jest.resetAllMocks();
-
-    useLocationMock.mockReturnValue({
-      search: '',
-    } as unknown as ReturnType<typeof useLocationMock>);
 
     mockUseContractCode.mockImplementation(
       () =>
@@ -111,14 +103,6 @@ describe('useNonContractAddressAlerts', () => {
 
   it('returns no alerts if no confirmation', () => {
     const confirmation = TRANSACTION_META_MOCK;
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: confirmation };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -129,6 +113,12 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [confirmation];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -146,14 +136,6 @@ describe('useNonContractAddressAlerts', () => {
       },
     };
 
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: transactionWithNoData };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -164,6 +146,12 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [transactionWithNoData];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -185,14 +173,6 @@ describe('useNonContractAddressAlerts', () => {
       },
     };
 
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: transactionWithData };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -203,6 +183,12 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [transactionWithData];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -232,15 +218,6 @@ describe('useNonContractAddressAlerts', () => {
       authorizationList,
     });
 
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: transaction };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
-
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -251,6 +228,12 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [transaction];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -258,9 +241,7 @@ describe('useNonContractAddressAlerts', () => {
 
     const { result } = renderHookWithConfirmContextProvider(
       useNonContractAddressAlerts,
-      {
-        currentConfirmation: transaction,
-      },
+      getMockConfirmStateForTransaction(transaction),
     );
 
     expect(result.current).toEqual([]);
@@ -274,14 +255,10 @@ describe('useNonContractAddressAlerts', () => {
         data: '0xabcdef',
       },
     };
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: transactionWithData };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
+    mockGetUnapprovedTransaction.mockReturnValue(transactionWithData);
+    const transactionState = getMockConfirmStateForTransaction(
+      transactionWithData as TransactionMeta,
+    );
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -292,6 +269,14 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [transactionWithData];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector(transactionState)?.id === transactionWithData.id) {
+        return selector(transactionState);
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -299,9 +284,10 @@ describe('useNonContractAddressAlerts', () => {
 
     const { result } = renderHookWithConfirmContextProvider(
       useNonContractAddressAlerts,
-      {
-        currentConfirmation: transactionWithData,
-      },
+      getMockConfirmStateForTransaction(transactionWithData as TransactionMeta),
+      '/',
+      undefined,
+      transactionWithData.id,
     );
 
     await waitFor(() => {
@@ -327,14 +313,6 @@ describe('useNonContractAddressAlerts', () => {
         data: '0xabcdef',
       },
     };
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: transactionWithData };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -345,6 +323,12 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [transactionWithData];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -352,9 +336,7 @@ describe('useNonContractAddressAlerts', () => {
 
     const { result } = renderHookWithConfirmContextProvider(
       useNonContractAddressAlerts,
-      {
-        currentConfirmation: transactionWithData,
-      },
+      getMockConfirmStateForTransaction(transactionWithData as TransactionMeta),
     );
 
     await waitFor(() => {
@@ -371,15 +353,6 @@ describe('useNonContractAddressAlerts', () => {
       },
     };
 
-    useContextMock.mockImplementation((context) => {
-      if (context === ConfirmContext) {
-        return { currentConfirmation: transactionWithData };
-      } else if (context === I18nContext) {
-        return (translationKey: string) => translationKey;
-      }
-      return undefined;
-    });
-
     useSelectorMock.mockImplementation((selector) => {
       if (selector === getNetworkConfigurationsByChainId) {
         return {
@@ -390,6 +363,12 @@ describe('useNonContractAddressAlerts', () => {
         };
       } else if (selector === selectPendingApprovalsForNavigation) {
         return [transactionWithData];
+      } else if (selector === selectSmartTransactions) {
+        return [];
+      } else if (selector === getUnapprovedTransaction) {
+        return mockGetUnapprovedTransaction();
+      } else if (selector.name === 'getAccountHardwareInfo') {
+        return ACCOUNT_HARDWARE_INFO_MOCK;
       }
 
       return undefined;
@@ -408,9 +387,7 @@ describe('useNonContractAddressAlerts', () => {
 
     const { result } = renderHookWithConfirmContextProvider(
       useNonContractAddressAlerts,
-      {
-        currentConfirmation: transactionWithData,
-      },
+      getMockConfirmStateForTransaction(transactionWithData as TransactionMeta),
     );
 
     await waitFor(() => {

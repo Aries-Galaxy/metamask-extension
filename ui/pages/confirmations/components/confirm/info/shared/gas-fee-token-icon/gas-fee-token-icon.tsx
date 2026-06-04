@@ -1,19 +1,22 @@
-import React from 'react';
-import { Hex } from '@metamask/utils';
-import { TransactionMeta } from '@metamask/transaction-controller';
-import { useSelector } from 'react-redux';
-
-import { NATIVE_TOKEN_ADDRESS } from '../../../../../../../../shared/constants/transaction';
-import { useConfirmContext } from '../../../../../context/confirm';
-import { selectNetworkConfigurationByChainId } from '../../../../../../../selectors';
-import Identicon from '../../../../../../../components/ui/identicon';
-import { CHAIN_ID_TOKEN_IMAGE_MAP } from '../../../../../../../../shared/constants/network';
 import {
   AvatarToken,
   AvatarTokenSize,
+  AvatarAccountSize,
   Box,
-} from '../../../../../../../components/component-library';
-import { BackgroundColor } from '../../../../../../../helpers/constants/design-system';
+} from '@metamask/design-system-react';
+import { TransactionMeta } from '@metamask/transaction-controller';
+import { Hex } from '@metamask/utils';
+import React from 'react';
+import { useSelector } from 'react-redux';
+import { CHAIN_ID_TOKEN_IMAGE_MAP } from '../../../../../../../../shared/constants/network';
+import { NATIVE_TOKEN_ADDRESS } from '../../../../../../../../shared/constants/transaction';
+import { PreferredAvatar } from '../../../../../../../components/app/preferred-avatar';
+import { selectERC20TokensByChain } from '../../../../../../../selectors';
+import {
+  selectNetworkConfigurationByChainId,
+  type NetworkConfigurationsByChainIdState,
+} from '../../../../../../../../shared/lib/selectors/networks';
+import { useConfirmContext } from '../../../../../context/confirm';
 
 export enum GasFeeTokenIconSize {
   Sm = 'sm',
@@ -30,19 +33,45 @@ export function GasFeeTokenIcon({
   tokenAddress: Hex;
 }) {
   const { currentConfirmation } = useConfirmContext<TransactionMeta>();
-  const { chainId } = currentConfirmation;
+  const { chainId } = currentConfirmation ?? {};
 
-  const networkConfiguration = useSelector((state) =>
-    selectNetworkConfigurationByChainId(state, chainId),
+  const networkConfiguration = useSelector(
+    (state: NetworkConfigurationsByChainIdState) =>
+      selectNetworkConfigurationByChainId(state, chainId),
   );
+
+  const erc20TokensByChain = useSelector(selectERC20TokensByChain);
+
+  if (!currentConfirmation) {
+    return null;
+  }
+
+  const variation = chainId;
+  const { iconUrl: image } =
+    erc20TokensByChain?.[variation]?.data?.[tokenAddress] ?? {};
 
   if (tokenAddress !== NATIVE_TOKEN_ADDRESS) {
     return (
       <Box data-testid="token-icon">
-        <Identicon
-          address={tokenAddress}
-          diameter={size === GasFeeTokenIconSize.Md ? 32 : 12}
-        />
+        {image ? (
+          <AvatarToken
+            src={image}
+            size={
+              size === GasFeeTokenIconSize.Md
+                ? AvatarTokenSize.Md
+                : AvatarTokenSize.Xs
+            }
+          />
+        ) : (
+          <PreferredAvatar
+            address={tokenAddress}
+            size={
+              size === GasFeeTokenIconSize.Md
+                ? AvatarAccountSize.Md
+                : AvatarAccountSize.Xs
+            }
+          />
+        )}
       </Box>
     );
   }
@@ -62,7 +91,6 @@ export function GasFeeTokenIcon({
             ? AvatarTokenSize.Md
             : AvatarTokenSize.Xs
         }
-        backgroundColor={BackgroundColor.backgroundDefault}
       />
     </Box>
   );

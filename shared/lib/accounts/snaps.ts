@@ -3,10 +3,11 @@ import {
   stripSnapPrefix,
   getLocalizedSnapManifest,
 } from '@metamask/snaps-utils';
-// eslint-disable-next-line import/no-restricted-paths
+// eslint-disable-next-line import-x/no-restricted-paths
 import { SnapKeyringBuilderMessenger } from '../../../app/scripts/lib/snap-keyring/types';
 import { SOLANA_WALLET_SNAP_ID } from './solana-wallet-snap';
 import { BITCOIN_WALLET_SNAP_ID } from './bitcoin-wallet-snap';
+import { TRON_WALLET_SNAP_ID } from './tron-wallet-snap';
 
 /**
  * A constant array that contains the IDs of whitelisted multichain
@@ -16,7 +17,11 @@ import { BITCOIN_WALLET_SNAP_ID } from './bitcoin-wallet-snap';
  * @constant
  * @type {SnapId[]}
  */
-const WHITELISTED_SNAPS = [BITCOIN_WALLET_SNAP_ID, SOLANA_WALLET_SNAP_ID];
+const WHITELISTED_SNAPS = [
+  BITCOIN_WALLET_SNAP_ID,
+  SOLANA_WALLET_SNAP_ID,
+  TRON_WALLET_SNAP_ID,
+];
 
 /**
  * Checks if the given Snap ID corresponds to a multichain wallet Snap.
@@ -40,7 +45,7 @@ export function getSnapName(
   messenger: SnapKeyringBuilderMessenger,
 ) {
   const { currentLocale } = messenger.call('PreferencesController:getState');
-  const snap = messenger.call('SnapController:get', snapId);
+  const snap = messenger.call('SnapController:getSnap', snapId);
 
   if (!snap) {
     return stripSnapPrefix(snapId);

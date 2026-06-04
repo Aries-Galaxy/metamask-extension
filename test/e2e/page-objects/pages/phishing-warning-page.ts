@@ -10,9 +10,7 @@ class PhishingWarningPage {
 
   private readonly iframeSelector = 'iframe';
 
-  private readonly openWarningInNewTabLink = {
-    text: 'Open this warning in a new tab',
-  };
+  private readonly openWarningInNewTabLink = '#open-self-in-new-tab';
 
   private readonly phishingWarningPageTitle = {
     text: 'This website might be harmful',
@@ -56,7 +54,14 @@ class PhishingWarningPage {
       this.iframeSelector,
     )) as WebElement;
     await this.driver.switchToFrame(iframe as unknown as string);
+    await this.checkPageIsLoaded();
     await this.driver.clickElement(this.openWarningInNewTabLink);
+    try {
+      // Switch back to default content before retrying, in case we're stuck in the iframe context that was replaced on load
+      await this.driver.switchToDefaultContent();
+    } catch {
+      // context may already be discarded
+    }
   }
 
   async clickProceedAnywayButton(): Promise<void> {

@@ -12,23 +12,24 @@ import {
 } from 'chart.js';
 // @ts-expect-error suppress CommonJS vs ECMAScript error
 import { Line } from 'react-chartjs-2';
-import classnames from 'classnames';
+import classnames from 'clsx';
 import { brandColor } from '@metamask/design-tokens';
-import { CaipAssetType, Hex } from '@metamask/utils';
+import { Hex } from '@metamask/utils';
 import { trim } from 'lodash';
 import { Duration } from 'luxon';
+import {
+  Box,
+  BoxBackgroundColor,
+  BoxFlexDirection,
+  BoxJustifyContent,
+} from '@metamask/design-system-react';
 import { useTheme } from '../../../../hooks/useTheme';
 import {
   BackgroundColor,
-  Display,
-  JustifyContent,
   TextColor,
   TextVariant,
-  BorderRadius,
-  FlexDirection,
 } from '../../../../helpers/constants/design-system';
 import {
-  Box,
   ButtonBase,
   ButtonBaseSize,
 } from '../../../../components/component-library';
@@ -36,7 +37,6 @@ import { TokenFiatDisplayInfo } from '../../../../components/app/assets/types';
 import { useI18nContext } from '../../../../hooks/useI18nContext';
 import { useHistoricalPrices } from '../../hooks/useHistoricalPrices';
 import { loadingOpacity } from '../../util';
-import { useChartTimeRanges } from '../../hooks/useChartTimeRanges';
 import ChartTooltip from './chart-tooltip';
 import { CrosshairPlugin } from './crosshair-plugin';
 import { AssetChartEmptyState } from './asset-chart-empty-state';
@@ -132,6 +132,8 @@ const getTranslatedTimeRangeLabel = (
   );
 };
 
+const TIME_RANGES = ['P1D', 'P1W', 'P1M', 'P3M', 'P1Y', 'P1000Y'];
+
 // A chart showing historic prices for a native or token asset
 const AssetChart = ({
   chainId,
@@ -149,10 +151,8 @@ const AssetChart = ({
   const t = useI18nContext();
   const theme = useTheme();
 
-  const timeRanges = useChartTimeRanges(address as CaipAssetType, currency);
-
   const [selectedTimeRange, setSelectedTimeRange] = useState<string>(
-    timeRanges[0] ?? 'P1D',
+    TIME_RANGES[0],
   );
 
   const {
@@ -197,11 +197,7 @@ const AssetChart = ({
   }, [currentPrice]);
 
   return (
-    <Box
-      borderRadius={BorderRadius.LG}
-      display={Display.Flex}
-      flexDirection={FlexDirection.Column}
-    >
+    <Box className="flex rounded-lg" flexDirection={BoxFlexDirection.Column}>
       <AssetChartPrice
         ref={priceRef}
         loading={loading}
@@ -214,15 +210,14 @@ const AssetChart = ({
 
       <Box
         data-testid="asset-price-chart"
+        className="flex rounded-lg"
         marginTop={4}
         backgroundColor={
           loading && !prices
-            ? BackgroundColor.backgroundSection
-            : BackgroundColor.transparent
+            ? BoxBackgroundColor.BackgroundSection
+            : BoxBackgroundColor.Transparent
         }
-        borderRadius={BorderRadius.LG}
-        display={Display.Flex}
-        flexDirection={FlexDirection.Column}
+        flexDirection={BoxFlexDirection.Column}
       >
         {shouldShowChartLoading && <AssetChartLoading />}
         {shouldShowChartEmptyState && <AssetChartEmptyState />}
@@ -236,10 +231,10 @@ const AssetChart = ({
             />
             <Box
               style={{ aspectRatio: `${options.aspectRatio}` }}
-              display={Display.Flex}
-              flexDirection={FlexDirection.Column}
+              className="flex"
+              flexDirection={BoxFlexDirection.Column}
               justifyContent={
-                currentPrice ? JustifyContent.flexEnd : JustifyContent.flexStart
+                currentPrice ? BoxJustifyContent.End : BoxJustifyContent.Start
               }
             >
               <Line
@@ -291,13 +286,13 @@ const AssetChart = ({
 
         <Box
           style={prices ? undefined : { visibility: `hidden` }}
-          display={Display.Flex}
-          justifyContent={JustifyContent.spaceBetween}
+          className="flex"
+          justifyContent={BoxJustifyContent.Between}
           marginTop={2}
           marginLeft={3}
           marginRight={3}
         >
-          {timeRanges.map((timeRange) => (
+          {TIME_RANGES.map((timeRange) => (
             <ButtonBase
               key={timeRange}
               className={classnames('time-range-button', {

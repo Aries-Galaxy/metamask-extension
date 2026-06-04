@@ -1,10 +1,12 @@
 import React from 'react';
 import { fireEvent } from '@testing-library/react';
+import { BtcAccountType } from '@metamask/keyring-api';
 import createMockStore from 'redux-mock-store';
 
-import { renderWithProvider } from '../../../../../../test/jest';
+import { renderWithProvider } from '../../../../../../test/lib/render-helpers-navigate';
 import { useNftImageUrl } from '../../../hooks/useNftImageUrl';
 import { AssetStandard } from '../../../types/send';
+import { enLocale as messages } from '../../../../../../test/lib/i18n-helpers';
 import { Asset } from './asset';
 
 const mockTokenAsset = {
@@ -100,7 +102,9 @@ describe('TokenAsset', () => {
     );
 
     expect(getByTestId('token-asset-undefined-TEST')).toBeInTheDocument();
-    expect(queryByRole('img', { name: 'Ethereum' })).not.toBeInTheDocument();
+    expect(
+      queryByRole('img', { name: messages.networkNameEthereum.message }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -170,7 +174,9 @@ describe('NFTAsset', () => {
     );
 
     expect(getByTestId('nft-asset')).toBeInTheDocument();
-    expect(queryByRole('img', { name: 'Ethereum' })).not.toBeInTheDocument();
+    expect(
+      queryByRole('img', { name: messages.networkNameEthereum.message }),
+    ).not.toBeInTheDocument();
   });
 
   it('uses collection imageUrl when asset image is not provided', () => {
@@ -183,5 +189,15 @@ describe('NFTAsset', () => {
 
     const image = getByAltText('Test NFT');
     expect(image).toHaveAttribute('src', 'https://example.com/collection.png');
+  });
+
+  it('renders account type label when account type is provided', () => {
+    const assetWithAccountType = {
+      ...mockTokenAsset,
+      accountType: BtcAccountType.P2wpkh,
+    };
+    const { getByText } = render(<Asset asset={assetWithAccountType} />);
+
+    expect(getByText('Native SegWit')).toBeInTheDocument();
   });
 });

@@ -87,16 +87,23 @@ const mockFeatureAnnouncementResponse = {
   ...getMockFeatureAnnouncementResponse(),
   url: /^https:\/\/cdn\.contentful\.com\/.*$/u,
 };
-const date = new Date();
-date.setMonth(date.getMonth() - 1);
+const FEATURE_ANNOUNCEMENT_EXPIRED_MS = 31 * 24 * 60 * 60 * 1000;
+const date = new Date(Date.now() - FEATURE_ANNOUNCEMENT_EXPIRED_MS);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (mockFeatureAnnouncementResponse.response as any).items[0].sys.createdAt =
-  date.toString();
+  date.toISOString();
 
 export function getMockWalletNotificationItemId(trigger: TRIGGER_TYPES) {
   return (
-    mockListNotificationsResponse.response.find((n) => n.data.kind === trigger)
-      ?.id ?? 'DOES NOT EXIST'
+    mockListNotificationsResponse.response.find((n) => {
+      if (n.notification_type === 'on-chain') {
+        return n.payload.data.kind === trigger;
+      }
+      if (n.notification_type === 'platform') {
+        return n.notification_type === trigger;
+      }
+      return false;
+    })?.id ?? 'DOES NOT EXIST'
   );
 }
 
@@ -161,7 +168,7 @@ function mockAPICall(
     requestRuleBuilder = server.forDelete(response.url);
   }
 
-  requestRuleBuilder?.thenCallback(() => ({
+  requestRuleBuilder?.always().thenCallback(() => ({
     statusCode: 200,
     json: response.response,
   }));

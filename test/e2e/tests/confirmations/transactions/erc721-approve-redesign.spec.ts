@@ -1,62 +1,24 @@
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires */
 import { MockttpServer } from 'mockttp';
-import { WINDOW_TITLES, withFixtures } from '../../../helpers';
+import { WINDOW_TITLES } from '../../../constants';
+import { withFixtures } from '../../../helpers';
+import FixtureBuilderV2 from '../../../fixtures/fixture-builder-v2';
 import { Driver } from '../../../webdriver/driver';
+import { SMART_CONTRACTS } from '../../../seeder/smart-contracts';
 import TestDapp from '../../../page-objects/pages/test-dapp';
-import { loginWithBalanceValidation } from '../../../page-objects/flows/login.flow';
+import { login } from '../../../page-objects/flows/login.flow';
 import { scrollAndConfirmAndAssertConfirm } from '../helpers';
 import { TestSuiteArguments, toggleAdvancedDetails } from './shared';
-
-const FixtureBuilder = require('../../../fixture-builder');
-const { SMART_CONTRACTS } = require('../../../seeder/smart-contracts');
 
 describe('Confirmation Redesign ERC721 Approve Component', function () {
   const smartContract = SMART_CONTRACTS.NFTS;
 
   describe('Submit an Approve transaction', function () {
-    it('Sends a type 0 transaction (Legacy)', async function () {
+    it('submits an ERC721 approve transaction', async function () {
       await withFixtures(
         {
-          dapp: true,
-          fixtures: new FixtureBuilder()
-            .withPermissionControllerConnectedToTestDapp()
-            .build(),
-          localNodeOptions: {
-            hardfork: 'muirGlacier',
-          },
-          smartContract,
-          testSpecificMock: mocks,
-          title: this.test?.fullTitle(),
-        },
-        async ({
-          driver,
-          contractRegistry,
-          localNodes,
-        }: TestSuiteArguments) => {
-          const contractAddress =
-            await contractRegistry?.getContractAddress(smartContract);
-
-          await loginWithBalanceValidation(driver, localNodes?.[0]);
-          const testDapp = new TestDapp(driver);
-          await testDapp.openTestDappPage({ contractAddress });
-          await testDapp.checkPageIsLoaded();
-
-          await createMintTransaction(driver);
-          await confirmMintTransaction(driver);
-
-          await createApproveTransaction(driver);
-
-          await assertApproveDetails(driver);
-          await confirmApproveTransaction(driver);
-        },
-      );
-    });
-
-    it('Sends a type 2 transaction (EIP1559)', async function () {
-      await withFixtures(
-        {
-          dapp: true,
-          fixtures: new FixtureBuilder()
+          dappOptions: { numberOfTestDapps: 1 },
+          fixtures: new FixtureBuilderV2()
             .withPermissionControllerConnectedToTestDapp()
             .build(),
           smartContract,
@@ -70,7 +32,7 @@ describe('Confirmation Redesign ERC721 Approve Component', function () {
         }: TestSuiteArguments) => {
           const contractAddress =
             await contractRegistry?.getContractAddress(smartContract);
-          await loginWithBalanceValidation(driver, localNodes?.[0]);
+          await login(driver, { localNode: localNodes?.[0] });
           const testDapp = new TestDapp(driver);
           await testDapp.openTestDappPage({ contractAddress });
           await testDapp.checkPageIsLoaded();
@@ -142,7 +104,7 @@ async function confirmMintTransaction(driver: Driver) {
   // Verify Mint Transaction is Confirmed before proceeding
   await driver.switchToWindowWithTitle(WINDOW_TITLES.ExtensionInFullScreenView);
   await driver.clickElement('[data-testid="account-overview__activity-tab"]');
-  await driver.waitForSelector('.transaction-status-label--confirmed');
+  await driver.waitForSelector('[data-tx-status="confirmed"]');
   await driver.switchToWindowWithTitle(WINDOW_TITLES.TestDApp);
 }
 
@@ -208,7 +170,5 @@ async function confirmApproveTransaction(driver: Driver) {
   await driver.switchToWindowWithTitle(WINDOW_TITLES.ExtensionInFullScreenView);
 
   await driver.clickElement({ text: 'Activity', tag: 'button' });
-  await driver.waitForSelector(
-    '.transaction-list__completed-transactions .activity-list-item:nth-of-type(1)',
-  );
+  await driver.waitForSelector('[data-tx-status="confirmed"]');
 }

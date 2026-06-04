@@ -1,21 +1,27 @@
 import { mockBackgroundEventsSnap } from '../mock-response-data/snaps/snap-binary-mocks';
 import { openTestSnapClickButtonAndInstall } from '../page-objects/flows/install-test-snap.flow';
-import { loginWithoutBalanceValidation } from '../page-objects/flows/login.flow';
+import { login } from '../page-objects/flows/login.flow';
 import { TestSnaps } from '../page-objects/pages/test-snaps';
 import { Driver } from '../webdriver/driver';
-import { withFixtures, WINDOW_TITLES } from '../helpers';
-import FixtureBuilder from '../fixture-builder';
+import { DAPP_PATH, WINDOW_TITLES } from '../constants';
+import { withFixtures } from '../helpers';
+import FixtureBuilderV2 from '../fixtures/fixture-builder-v2';
 
 describe('Test Snap Background Events', function () {
   it('can trigger a background event with a date to open a dialog', async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder().build(),
+        dappOptions: {
+          customDappPaths: [DAPP_PATH.TEST_SNAPS],
+        },
+        fixtures: new FixtureBuilderV2()
+          .withSnapsPrivacyWarningAlreadyShown()
+          .build(),
         title: this.test?.fullTitle(),
         testSpecificMock: mockBackgroundEventsSnap,
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithoutBalanceValidation(driver);
+        await login(driver);
 
         const testSnaps = new TestSnaps(driver);
 
@@ -64,7 +70,7 @@ describe('Test Snap Background Events', function () {
         // try to click on the Ok button and pass test if window closes
         await driver.clickElementAndWaitForWindowToClose({
           text: 'Close',
-          tag: 'span',
+          tag: 'button',
         });
       },
     );
@@ -73,12 +79,17 @@ describe('Test Snap Background Events', function () {
   it('can trigger a background event with a duration to open a dialog', async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder().build(),
+        dappOptions: {
+          customDappPaths: [DAPP_PATH.TEST_SNAPS],
+        },
+        fixtures: new FixtureBuilderV2()
+          .withSnapsPrivacyWarningAlreadyShown()
+          .build(),
         title: this.test?.fullTitle(),
         testSpecificMock: mockBackgroundEventsSnap,
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithoutBalanceValidation(driver);
+        await login(driver, { validateBalance: false });
 
         const testSnaps = new TestSnaps(driver);
 
@@ -133,7 +144,7 @@ describe('Test Snap Background Events', function () {
         // try to click on the Ok button and pass test if window closes
         await driver.clickElementAndWaitForWindowToClose({
           text: 'Close',
-          tag: 'span',
+          tag: 'button',
         });
       },
     );
@@ -142,12 +153,17 @@ describe('Test Snap Background Events', function () {
   it('can cancel a background event', async function () {
     await withFixtures(
       {
-        fixtures: new FixtureBuilder().build(),
+        dappOptions: {
+          customDappPaths: [DAPP_PATH.TEST_SNAPS],
+        },
+        fixtures: new FixtureBuilderV2()
+          .withSnapsPrivacyWarningAlreadyShown()
+          .build(),
         title: this.test?.fullTitle(),
         testSpecificMock: mockBackgroundEventsSnap,
       },
       async ({ driver }: { driver: Driver }) => {
-        await loginWithoutBalanceValidation(driver);
+        await login(driver, { validateBalance: false });
 
         const testSnaps = new TestSnaps(driver);
 

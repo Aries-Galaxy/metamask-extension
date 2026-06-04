@@ -1,18 +1,50 @@
 import { Browser } from 'selenium-webdriver';
-import { AuthConnection } from '@metamask/seedless-onboarding-controller';
 import { Driver } from '../../webdriver/driver';
 import OnboardingMetricsPage from '../pages/onboarding/onboarding-metrics-page';
 import OnboardingPasswordPage from '../pages/onboarding/onboarding-password-page';
 import OnboardingSrpPage from '../pages/onboarding/onboarding-srp-page';
 import StartOnboardingPage from '../pages/onboarding/start-onboarding-page';
 import SecureWalletPage from '../pages/onboarding/secure-wallet-page';
+import SetupPasskeyPage from '../pages/onboarding/setup-passkey-page';
 import OnboardingCompletePage from '../pages/onboarding/onboarding-complete-page';
 import OnboardingPrivacySettingsPage from '../pages/onboarding/onboarding-privacy-settings-page';
-import { WALLET_PASSWORD } from '../../helpers';
-import { E2E_SRP } from '../../default-fixture';
+import { E2E_SRP, WALLET_PASSWORD } from '../../constants';
+import HeaderNavbar from '../pages/header-navbar';
 import HomePage from '../pages/home/homepage';
 import LoginPage from '../pages/login-page';
 import TermsOfUseUpdateModal from '../pages/dialog/terms-of-use-update-modal';
+import { AuthConnection } from '../../../../shared/constants/onboarding';
+
+/**
+ * Helper function to handle post-onboarding navigation for sidepanel builds.
+ * When sidepanel is enabled, clicking "Done" opens the home page in the sidepanel,
+ * but the main window remains on the onboarding completion page.
+ * This function navigates the current window to the actual home page.
+ * Note: Sidepanel is only supported on Chrome-based browsers, not Firefox.
+ *
+ * @param driver - The WebDriver instance
+ */
+export const handleSidepanelPostOnboarding = async (
+  driver: Driver,
+): Promise<void> => {
+  // Only run when sidepanel is actually enabled on Chrome
+  const isSidepanelEnabled = process.env.SELENIUM_BROWSER === 'chrome';
+
+  if (!isSidepanelEnabled) {
+    return;
+  }
+
+  // Give the onboarding completion time to process (needed for sidepanel)
+  await driver.delay(2000);
+
+  // Navigate directly to home page in current window
+  // With sidepanel enabled, this ensures we load home page in the test window
+  await driver.driver.get(`${driver.extensionUrl}/home.html`);
+
+  // Wait for the home page to fully load
+  const headerNavbar = new HeaderNavbar(driver);
+  await headerNavbar.checkPageIsLoaded();
+};
 
 /**
  * Navigate to the onboarding welcome login page
@@ -38,7 +70,6 @@ const goToOnboardingWelcomeLoginPage = async ({
   if (needNavigateToNewPage) {
     await driver.navigate();
   }
-
   if (process.env.SELENIUM_BROWSER === Browser.FIREFOX) {
     await onboardingMetricsFlow(driver, {
       participateInMetaMetrics,
@@ -50,6 +81,28 @@ const goToOnboardingWelcomeLoginPage = async ({
   await startOnboardingPage.checkLoginPageIsLoaded();
 
   return startOnboardingPage;
+};
+
+/**
+ * Skip the passkey setup page when it is presented during onboarding.
+ *
+ * Note: Passkey setup page is only shown for the non-social login flows.
+ *
+ * @param driver - The WebDriver instance.
+ * @param options - The options object.
+ * @param [options.timeout] - The time to wait for the page to appear.
+ */
+export const skipPasskeySetup = async (
+  driver: Driver,
+  { timeout = 5000 }: { timeout?: number } = {},
+): Promise<void> => {
+  // passkey setup is only shown for chrome
+  if (process.env.SELENIUM_BROWSER !== Browser.FIREFOX) {
+    const setupPasskeyPage = new SetupPasskeyPage(driver);
+
+    await setupPasskeyPage.checkPageIsLoaded(timeout);
+    await setupPasskeyPage.skipPasskeySetup();
+  }
 };
 
 /**
@@ -88,7 +141,16 @@ export const createNewWalletWithSocialLoginOnboardingFlow = async ({
     dataCollectionForMarketing,
   });
 
+  const originalWindowHandle = await driver.getCurrentWindowHandle();
   await startOnboardingPage.createWalletWithSocialLogin(authConnection);
+
+  if (authConnection === AuthConnection.Telegram) {
+    await recoverFromTelegramAuthTab({
+      driver,
+      originalWindowHandle,
+    });
+  }
+
   const onboardingPasswordPage = new OnboardingPasswordPage(driver);
   await onboardingPasswordPage.checkPageIsLoaded();
 
@@ -131,7 +193,15 @@ export const importWalletWithSocialLoginOnboardingFlow = async ({
     dataCollectionForMarketing,
   });
 
+  const originalWindowHandle = await driver.getCurrentWindowHandle();
   await startOnboardingPage.importWalletWithSocialLogin(authConnection);
+
+  if (authConnection === AuthConnection.Telegram) {
+    await recoverFromTelegramAuthTab({
+      driver,
+      originalWindowHandle,
+    });
+  }
 
   const loginPage = new LoginPage(driver);
   await loginPage.checkPageIsLoaded();
@@ -144,6 +214,18 @@ export const importWalletWithSocialLoginOnboardingFlow = async ({
   //   });
   // }
 };
+
+async function recoverFromTelegramAuthTab({
+  driver,
+  originalWindowHandle,
+}: {
+  driver: Driver;
+  originalWindowHandle: string;
+}): Promise<void> {
+  // OAuthService resolves after the redirect is handled and the auth tab close
+  // is already in flight, so the E2E flow only needs to restore focus.
+  await driver.switchToWindow(originalWindowHandle);
+}
 
 /**
  * Create new wallet onboarding flow
@@ -186,6 +268,7 @@ export const createNewWalletOnboardingFlow = async ({
   const onboardingPasswordPage = new OnboardingPasswordPage(driver);
   await onboardingPasswordPage.checkPageIsLoaded();
   await onboardingPasswordPage.createWalletPassword(password);
+  await skipPasskeySetup(driver);
 
   const secureWalletPage = new SecureWalletPage(driver);
   await secureWalletPage.checkPageIsLoaded();
@@ -239,6 +322,7 @@ export const incompleteCreateNewWalletOnboardingFlow = async ({
   const onboardingPasswordPage = new OnboardingPasswordPage(driver);
   await onboardingPasswordPage.checkPageIsLoaded();
   await onboardingPasswordPage.createWalletPassword(password);
+  await skipPasskeySetup(driver);
 
   const secureWalletPage = new SecureWalletPage(driver);
   await secureWalletPage.checkPageIsLoaded();
@@ -264,14 +348,15 @@ export async function onboardingMetricsFlow(
     await onboardingMetricsPage.validateDataCollectionForMarketingIsChecked();
   }
 
-  // The participate in MetaMetrics checkbox defaults to checked.
+  // The participate in MetaMetrics checkbox defaults to checked, but may
+  // already reflect a previously saved value (e.g. after vault recovery).
   // - If opting in (true): do not click; just validate it's checked.
-  // - If opting out (false): click once to uncheck and validate it's unchecked.
+  // - If opting out (false): ensure it's unchecked without assuming its
+  //   current state, to avoid accidentally re-checking it.
   if (participateInMetaMetrics) {
     await onboardingMetricsPage.validateParticipateInMetaMetricsIsChecked();
   } else {
-    await onboardingMetricsPage.clickParticipateInMetaMetricsCheckbox();
-    await onboardingMetricsPage.validateParticipateInMetaMetricsIsUnchecked();
+    await onboardingMetricsPage.ensureParticipateInMetaMetricsIsUnchecked();
   }
 
   await onboardingMetricsPage.clickOnContinueButton();
@@ -287,6 +372,7 @@ export async function onboardingMetricsFlow(
  * @param params.fillSrpWordByWord - Whether to fill the SRP word by word. Defaults to false.
  * @param params.participateInMetaMetrics - Whether to participate in MetaMetrics. Defaults to false.
  * @param params.dataCollectionForMarketing - Whether to enable data collection for marketing. Defaults to false.
+ * @param params.needNavigateToNewPage - Whether to navigate to a new page before starting. Defaults to true.
  * @returns A promise that resolves when the onboarding flow is complete.
  */
 export const importSRPOnboardingFlow = async ({
@@ -296,6 +382,7 @@ export const importSRPOnboardingFlow = async ({
   fillSrpWordByWord = false,
   participateInMetaMetrics = false,
   dataCollectionForMarketing = false,
+  needNavigateToNewPage = true,
 }: {
   driver: Driver;
   seedPhrase?: string;
@@ -303,12 +390,14 @@ export const importSRPOnboardingFlow = async ({
   fillSrpWordByWord?: boolean;
   participateInMetaMetrics?: boolean;
   dataCollectionForMarketing?: boolean;
+  needNavigateToNewPage?: boolean;
 }): Promise<void> => {
   console.log('Starting the import of SRP onboarding flow');
   const startOnboardingPage = await goToOnboardingWelcomeLoginPage({
     driver,
     participateInMetaMetrics,
     dataCollectionForMarketing,
+    needNavigateToNewPage,
   });
   await startOnboardingPage.importWallet();
 
@@ -324,6 +413,7 @@ export const importSRPOnboardingFlow = async ({
   const onboardingPasswordPage = new OnboardingPasswordPage(driver);
   await onboardingPasswordPage.checkPageIsLoaded();
   await onboardingPasswordPage.createWalletPassword(password);
+  await skipPasskeySetup(driver);
 
   if (process.env.SELENIUM_BROWSER !== Browser.FIREFOX) {
     await onboardingMetricsFlow(driver, {
@@ -373,7 +463,69 @@ export const completeCreateNewWalletOnboardingFlow = async ({
   if (!skipSRPBackup) {
     await onboardingCompletePage.checkWalletReadyMessageIsDisplayed();
   }
+
   await onboardingCompletePage.completeOnboarding();
+
+  await handleSidepanelPostOnboarding(driver);
+  const homePage = new HomePage(driver);
+  await homePage.checkPageIsLoaded();
+  await homePage.waitForLoadingOverlayToDisappear();
+};
+
+/**
+ * Complete create new wallet onboarding flow with passkey enrollment.
+ * Uses the real WebAuthn enrollment flow (requires a virtual authenticator
+ * to be attached to the browser before calling this).
+ *
+ * @param options - The options object.
+ * @param options.driver - The WebDriver instance.
+ * @param [options.password] - The password to use. Defaults to WALLET_PASSWORD.
+ */
+export const completeOnboardingWithPasskey = async ({
+  driver,
+  password = WALLET_PASSWORD,
+}: {
+  driver: Driver;
+  password?: string;
+}): Promise<void> => {
+  console.log('Starting onboarding with passkey enrollment');
+
+  const startOnboardingPage = await goToOnboardingWelcomeLoginPage({
+    driver,
+    participateInMetaMetrics: false,
+    needNavigateToNewPage: true,
+    dataCollectionForMarketing: false,
+  });
+  await startOnboardingPage.createWalletWithSrp();
+
+  const onboardingPasswordPage = new OnboardingPasswordPage(driver);
+  await onboardingPasswordPage.checkPageIsLoaded();
+  await onboardingPasswordPage.createWalletPassword(password);
+
+  const setupPasskeyPage = new SetupPasskeyPage(driver);
+  await setupPasskeyPage.checkPageIsLoaded();
+  await setupPasskeyPage.clickSetUpPasskey();
+  await setupPasskeyPage.waitForEnrollmentSteps();
+  await setupPasskeyPage.waitForEnrollmentSuccess();
+
+  const secureWalletPage = new SecureWalletPage(driver);
+  await secureWalletPage.checkPageIsLoaded();
+  await secureWalletPage.revealAndConfirmSRP();
+
+  if (process.env.SELENIUM_BROWSER !== Browser.FIREFOX) {
+    await onboardingMetricsFlow(driver);
+  }
+
+  const onboardingCompletePage = new OnboardingCompletePage(driver);
+  await onboardingCompletePage.checkPageIsLoaded();
+  await onboardingCompletePage.checkWalletReadyMessageIsDisplayed();
+  await onboardingCompletePage.completeOnboarding();
+
+  await handleSidepanelPostOnboarding(driver);
+
+  const homePage = new HomePage(driver);
+  await homePage.checkPageIsLoaded();
+  await homePage.waitForLoadingOverlayToDisappear();
 };
 
 /**
@@ -386,6 +538,7 @@ export const completeCreateNewWalletOnboardingFlow = async ({
  * @param [options.fillSrpWordByWord] - Whether to fill the SRP word by word. Defaults to false.
  * @param [options.participateInMetaMetrics] - Whether to participate in MetaMetrics. Defaults to false.
  * @param [options.dataCollectionForMarketing] - Whether to enable data collection for marketing. Defaults to false.
+ * @param [options.needNavigateToNewPage] - Whether to navigate to a new page before starting. Defaults to true.
  * @returns A promise that resolves when the onboarding flow is complete.
  */
 export const completeImportSRPOnboardingFlow = async ({
@@ -395,6 +548,7 @@ export const completeImportSRPOnboardingFlow = async ({
   fillSrpWordByWord = false,
   participateInMetaMetrics = false,
   dataCollectionForMarketing = false,
+  needNavigateToNewPage = true,
 }: {
   driver: Driver;
   seedPhrase?: string;
@@ -402,6 +556,7 @@ export const completeImportSRPOnboardingFlow = async ({
   fillSrpWordByWord?: boolean;
   participateInMetaMetrics?: boolean;
   dataCollectionForMarketing?: boolean;
+  needNavigateToNewPage?: boolean;
 }): Promise<void> => {
   console.log('Starting to complete import SRP onboarding flow');
   await importSRPOnboardingFlow({
@@ -411,12 +566,17 @@ export const completeImportSRPOnboardingFlow = async ({
     fillSrpWordByWord,
     participateInMetaMetrics,
     dataCollectionForMarketing,
+    needNavigateToNewPage,
   });
 
   const onboardingCompletePage = new OnboardingCompletePage(driver);
   await onboardingCompletePage.checkPageIsLoaded();
   await onboardingCompletePage.checkWalletReadyMessageIsDisplayed();
+
   await onboardingCompletePage.completeOnboarding();
+
+  // Handle sidepanel navigation if needed
+  await handleSidepanelPostOnboarding(driver);
 };
 
 /**
@@ -467,6 +627,61 @@ export const completeCreateNewWalletOnboardingFlowWithCustomSettings = async ({
 
   await onboardingPrivacySettingsPage.navigateBackToOnboardingCompletePage();
   await onboardingCompletePage.checkPageIsLoaded();
+
+  await onboardingCompletePage.completeOnboarding();
+  if (process.env.SELENIUM_BROWSER === Browser.CHROME) {
+    // wait for the sidepanel to open
+    await driver.delay(3000);
+  }
+
+  await handleSidepanelPostOnboarding(driver);
+};
+
+/**
+ * Add custom network in onboarding privacy settings, then finish onboarding,
+ * navigate to home, and enable “Show test networks” from Settings → Networks
+ * before any later flow that switches the asset list to Localhost (e.g. wallet
+ * fixture export).
+ *
+ * @param options - The options object.
+ * @param options.driver - The WebDriver instance.
+ * @param options.networkName - The name of the custom network.
+ * @param options.chainId - The chain ID of the custom network.
+ * @param options.currencySymbol - The currency symbol for the network.
+ * @param options.networkUrl - The RPC URL for the network.
+ */
+export const addCustomNetworkInOnboardingPrivacySettings = async ({
+  driver,
+  networkName,
+  chainId,
+  currencySymbol,
+  networkUrl,
+}: {
+  driver: Driver;
+  networkName: string;
+  chainId: number;
+  currencySymbol: string;
+  networkUrl: string;
+}): Promise<void> => {
+  const onboardingCompletePage = new OnboardingCompletePage(driver);
+  await onboardingCompletePage.checkPageIsLoaded();
+  await onboardingCompletePage.checkWalletReadyMessageIsDisplayed();
+  await onboardingCompletePage.navigateToDefaultPrivacySettings();
+
+  const onboardingPrivacySettingsPage = new OnboardingPrivacySettingsPage(
+    driver,
+  );
+
+  await onboardingPrivacySettingsPage.addCustomNetwork(
+    networkName,
+    chainId,
+    currencySymbol,
+    networkUrl,
+  );
+
+  await onboardingPrivacySettingsPage.navigateBackToOnboardingCompletePage();
+
+  await onboardingCompletePage.checkPageIsLoaded();
   await onboardingCompletePage.completeOnboarding();
 };
 
@@ -503,14 +718,18 @@ export const completeVaultRecoveryOnboardingFlow = async ({
   // finish up onboarding screens
   const onboardingCompletePage = new OnboardingCompletePage(driver);
   await onboardingCompletePage.checkPageIsLoaded();
+
   await onboardingCompletePage.completeOnboarding();
 
-  const homePage = new HomePage(driver);
-  homePage.checkPageIsLoaded();
+  await handleSidepanelPostOnboarding(driver);
 
   // Because our state was reset, and the flow skips the welcome screen, we now
-  // need to accept the terms of use again
+  // need to accept the terms of use again. Must handle this BEFORE checking
+  // homepage is loaded, as the modal blocks the homepage elements.
   const updateTermsOfUseModal = new TermsOfUseUpdateModal(driver);
   await updateTermsOfUseModal.checkPageIsLoaded();
   await updateTermsOfUseModal.confirmAcceptTermsOfUseUpdate();
+
+  const homePage = new HomePage(driver);
+  await homePage.checkPageIsLoaded();
 };

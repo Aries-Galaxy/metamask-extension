@@ -1,17 +1,26 @@
 import { WebElement } from 'selenium-webdriver';
 import { Driver } from '../../../webdriver/driver';
-import { Ganache } from '../../../seeder/ganache';
 import { Anvil } from '../../../seeder/anvil';
 import HeaderNavbar from '../header-navbar';
-import { getCleanAppState } from '../../../helpers';
+import { getCleanAppState, regularDelayMs } from '../../../helpers';
+import {
+  BASE_ACCOUNT_SYNC_INTERVAL,
+  BASE_ACCOUNT_SYNC_TIMEOUT,
+  POST_UNLOCK_DELAY,
+} from '../../../tests/identity/account-syncing/helpers';
 
 class HomePage {
   protected driver: Driver;
 
   public headerNavbar: HeaderNavbar;
 
-  private readonly activityTab = {
+  protected readonly activityTab = {
     testId: 'account-overview__activity-tab',
+  };
+
+  private readonly backupRemindMeLaterButton = {
+    tag: 'button',
+    text: 'Remind me later',
   };
 
   private readonly backupSecretRecoveryPhraseButton = {
@@ -24,72 +33,103 @@ class HomePage {
     css: '.home-notification__text',
   };
 
+  // Matches both the EVM (`eth-overview__primary-currency`) and non-EVM
+  // (`coin-overview__primary-currency`) balance containers.
   protected readonly balance: string =
-    '[data-testid="eth-overview__primary-currency"]';
+    '[data-testid$="overview__primary-currency"]';
 
   private readonly basicFunctionalityOffWarningMessage = {
     text: 'Basic functionality is off',
     css: '.mm-banner-base',
   };
 
+  private readonly bitcoinAccountIcon = 'img[src="./images/bitcoin-logo.svg"]';
+
   protected readonly bridgeButton: string =
     '[data-testid="eth-overview-bridge"]';
+
+  protected readonly buySellButton = { css: 'button', text: 'Buy' };
+
+  private readonly closeSurveyToastBannerButton =
+    '[data-testid="survey-toast-banner-base"] [aria-label="Close"] span';
 
   private readonly closeUseNetworkNotificationModalButton = {
     text: 'Got it',
     tag: 'h6',
   };
 
-  private readonly erc20TokenDropdown = {
-    testId: 'asset-list-control-bar-action-button',
+  private readonly connectionsRemovedModal =
+    '[data-testid="connections-removed-modal"]';
+
+  private readonly copyAddressButton = '[data-testid="app-header-copy-button"]';
+
+  private readonly defaultAddressContainer =
+    '[data-testid="default-address-container"]';
+
+  protected readonly defiTab = {
+    testId: 'account-overview__defi-tab',
+  };
+
+  private readonly emptyBalance =
+    '[data-testid="coin-overview-balance-empty-state"]';
+
+  private readonly fundYourWalletBanner = {
+    text: 'Fund your wallet',
   };
 
   private readonly loadingOverlay = {
     text: 'Connecting to Localhost 8545',
   };
 
-  private readonly nftTab = {
+  protected readonly nftTab = {
     testId: 'account-overview__nfts-tab',
   };
 
-  private readonly defiTab = {
-    testId: 'account-overview__defi-tab',
-  };
+  private readonly overviewBalanceSection = '.wallet-overview__balance';
 
   private readonly popoverBackground = '.popover-bg';
 
   private readonly portfolioLink = '[data-testid="portfolio-link"]';
 
   private readonly privacyBalanceToggle = {
-    testId: 'sensitive-toggle',
+    testId: 'account-value-and-suffix',
   };
 
-  protected readonly sendButton: string = '[data-testid="eth-overview-send"]';
+  protected readonly receiveButton = { css: 'button', text: 'Receive' };
 
-  protected readonly swapButton: string = '[data-testid="eth-overview-swap"]';
+  private readonly revealSrpPasswordInput = '[data-testid="input-password"]';
 
-  private readonly refreshErc20Tokens = {
-    testId: 'refreshList',
-  };
-
-  private readonly surveyToast = '[data-testid="survey-toast"]';
-
-  private readonly tokensTab = {
-    testId: 'account-overview__asset-tab',
-  };
-
-  private readonly closeSurveyToastBannerButton =
-    '[data-testid="survey-toast-banner-base"] [aria-label="Close"] span';
-
-  private readonly copyAddressButton = '[data-testid="app-header-copy-button"]';
-
-  private readonly connectionsRemovedModal =
-    '[data-testid="connections-removed-modal"]';
+  protected readonly sendButton = { css: 'button', text: 'Send' };
 
   private readonly shieldEntryModal = '[data-testid="shield-entry-modal"]';
 
   private readonly shieldEntryModalGetStarted =
     '[data-testid="shield-entry-modal-get-started-button"]';
+
+  private readonly shieldEntryModalSkip =
+    '[data-testid="shield-entry-modal-close-button"]';
+
+  private readonly solanaAccountIcon = 'img[src="./images/solana-logo.svg"]';
+
+  private readonly srpAddedToast = '[data-testid="new-srp-added-toast"]';
+
+  private readonly srpAddedToastCloseButton =
+    '.toast-container button[aria-label="Close"]';
+
+  private readonly storageErrorToast = '[data-testid="storage-error-toast"]';
+
+  private readonly storageErrorToastBackupButton = {
+    text: 'Back up Secret Recovery Phrase',
+    tag: 'span',
+  };
+
+  private readonly surveyToast = '[data-testid="survey-toast"]';
+
+  protected readonly swapButton = { css: 'button', text: 'Swap' };
+
+  protected readonly tokensTab = {
+    testId: 'account-overview__asset-tab',
+  };
 
   constructor(driver: Driver) {
     this.driver = driver;
@@ -99,8 +139,8 @@ class HomePage {
   async checkPageIsLoaded(): Promise<void> {
     try {
       await this.driver.waitForMultipleSelectors([
-        this.sendButton,
         this.activityTab,
+        this.overviewBalanceSection,
         this.tokensTab,
       ]);
     } catch (e) {
@@ -108,6 +148,71 @@ class HomePage {
       throw e;
     }
     console.log('Home page is loaded');
+  }
+
+  async waitForNetworkAndDOMReady(): Promise<void> {
+    console.log(
+      'Waiting for network idle, DOM loaded, page completed, and Redux state ready',
+    );
+    try {
+      // Wait for DOM to be ready
+      await this.driver.executeScript(`
+        return new Promise((resolve) => {
+          if (document.readyState === 'complete') {
+            resolve();
+          } else {
+            window.addEventListener('load', () => resolve(), { once: true });
+          }
+        });
+      `);
+
+      // Wait for Redux state to be ready
+      await this.driver.executeAsyncScript(`
+        const callback = arguments[arguments.length - 1];
+        const maxAttempts = 50;
+        let attempts = 0;
+
+        const checkReduxReady = () => {
+          attempts++;
+
+          if (window.stateHooks?.getCleanAppState) {
+            try {
+              const state = window.stateHooks.getCleanAppState();
+
+              if (state && typeof state === 'object') {
+                if (state.metamask && typeof state.metamask === 'object') {
+                  console.log('Redux state is ready');
+                  callback();
+                  return;
+                }
+              }
+            } catch (e) {
+              console.log('Redux state not ready yet, attempt ' + attempts);
+            }
+          }
+
+          if (attempts >= maxAttempts) {
+            console.log('Redux state check timeout, continuing anyway');
+            callback();
+            return;
+          }
+          setTimeout(checkReduxReady, 100);
+        };
+        checkReduxReady();
+      `);
+
+      console.log(
+        'Network idle, DOM loaded, page completed, and Redux state ready',
+      );
+    } catch (e) {
+      console.log('Error waiting for network, DOM, and Redux ready', e);
+    }
+  }
+
+  async waitForNonEvmAccountsLoaded(): Promise<void> {
+    console.log('Waiting for Non EVM account icons to be visible');
+    await this.driver.waitForSelector(this.solanaAccountIcon);
+    await this.driver.waitForSelector(this.bitcoinAccountIcon);
   }
 
   async checkPageIsNotLoaded(): Promise<void> {
@@ -120,6 +225,12 @@ class HomePage {
     });
   }
 
+  async clickBackupRemindMeLaterButton(): Promise<void> {
+    await this.driver.clickElementAndWaitToDisappear(
+      this.backupRemindMeLaterButton,
+    );
+  }
+
   async closeSurveyToast(surveyName: string): Promise<void> {
     console.log(`Close survey toast for ${surveyName}`);
     await this.driver.waitForSelector({
@@ -127,6 +238,27 @@ class HomePage {
       text: surveyName,
     });
     await this.driver.clickElement(this.closeSurveyToastBannerButton);
+  }
+
+  /**
+   * Checks if the storage error toast is displayed.
+   * This toast appears when storage.local.set() operations fail.
+   */
+  async checkStorageErrorToastIsDisplayed(): Promise<void> {
+    console.log('Check storage error toast is displayed on homepage');
+    await this.driver.waitForSelector(this.storageErrorToast);
+  }
+
+  /**
+   * Clicks the "Back up Secret Recovery Phrase" button on the storage error toast
+   * and verifies navigation to the reveal SRP page.
+   */
+  async clickStorageErrorToastBackupButton(): Promise<void> {
+    console.log(
+      'Click backup button on storage error toast to navigate to reveal SRP page',
+    );
+    await this.driver.clickElement(this.storageErrorToastBackupButton);
+    await this.driver.waitForSelector(this.revealSrpPasswordInput);
   }
 
   async closeUseNetworkNotificationModal(): Promise<void> {
@@ -172,12 +304,6 @@ class HomePage {
   async openPortfolioPage(): Promise<void> {
     console.log(`Open portfolio page on homepage`);
     await this.driver.clickElement(this.portfolioLink);
-  }
-
-  async refreshErc20TokenList(): Promise<void> {
-    console.log(`Refresh the ERC20 token list`);
-    await this.driver.clickElement(this.erc20TokenDropdown);
-    await this.driver.clickElement(this.refreshErc20Tokens);
   }
 
   async startSendFlow(): Promise<void> {
@@ -226,6 +352,19 @@ class HomePage {
     );
   }
 
+  /**
+   * Checks that balance is displayed with ETH symbol.
+   * We verify the element contains "ETH" rather than exact values since gas fees vary.
+   */
+  async checkBalanceIsDisplayed(): Promise<void> {
+    console.log('Check balance element is displayed on homepage');
+    await this.driver.waitForSelector({
+      css: this.balance,
+      text: 'ETH',
+    });
+    console.log('Balance is displayed in correct format');
+  }
+
   async checkBasicFunctionalityOffWarnigMessageIsDisplayed(): Promise<void> {
     console.log(
       'Check if basic functionality off warning message is displayed on homepage',
@@ -260,18 +399,29 @@ class HomePage {
    *
    * @param expectedBalance - The expected balance to be displayed. Defaults to '25'.
    * @param symbol - The symbol of the currency or token. Defaults to 'ETH'.
+   * @param expectFundYourWalletBanner - When the balance is '0', whether to assert the
+   * "Fund your wallet" banner (EVM behavior).
+   * @param timeout - Max ms to wait for the balance; defaults to `driver.timeout` (10s unless the test overrides `Driver` construction).
    */
   async checkExpectedBalanceIsDisplayed(
     expectedBalance: string = '25',
     symbol: string = 'ETH',
+    expectFundYourWalletBanner: boolean = true,
+    timeout: number = this.driver.timeout,
   ): Promise<void> {
+    if (expectedBalance === '0' && expectFundYourWalletBanner) {
+      await this.driver.waitForSelector(this.fundYourWalletBanner, { timeout });
+      return;
+    }
     try {
-      await this.driver.waitForSelector({
-        css: this.balance,
-        text: expectedBalance,
-      });
+      await this.driver.waitForSelector(
+        { css: this.balance, text: expectedBalance },
+        { timeout },
+      );
     } catch (e) {
-      const balance = await this.driver.waitForSelector(this.balance);
+      const balance = await this.driver.waitForSelector(this.balance, {
+        timeout,
+      });
       const currentBalance = parseFloat(await balance.getText());
       const errorMessage = `Expected balance ${expectedBalance} ${symbol}, got balance ${currentBalance} ${symbol}`;
       console.log(errorMessage, e);
@@ -283,30 +433,41 @@ class HomePage {
   }
 
   /**
-   * Checks if the expected token balance is displayed on homepage.
-   *
-   * @param expectedTokenBalance - The expected balance to be displayed.
-   * @param symbol - The symbol of the currency or token.
+   * Checks if the balance empty state is displayed on homepage.
+   * Criteria:
+   * - The account group has a zero balance across all aggregated mainnet networks.
+   * - The account group is not on a test network
+   * - The account group is not in a cached state
+   * Not a replacement for checkExpectedBalanceIsDisplayed('0') this is still valid in certain cases.
    */
-  async checkExpectedTokenBalanceIsDisplayed(
-    expectedTokenBalance: string,
-    symbol: string,
-  ): Promise<void> {
-    await this.driver.waitForSelector({
-      css: '[data-testid="multichain-token-list-item-value"]',
-      text: `${expectedTokenBalance} ${symbol}`,
-    });
+  async checkBalanceEmptyStateIsDisplayed(): Promise<void> {
+    console.log('Check balance empty state is displayed on homepage');
+    await this.driver.waitForSelector(this.emptyBalance);
   }
 
   /**
    * This function checks if account syncing has been successfully completed at least once.
+   * Includes a delay before checking to give Firefox more time to initialize (reduces flakiness).
    */
   async checkHasAccountSyncingSyncedAtLeastOnce(): Promise<void> {
+    console.log(
+      `Waiting ${POST_UNLOCK_DELAY}ms before checking account sync state (Firefox timing fix)`,
+    );
+    await this.driver.delay(POST_UNLOCK_DELAY);
     console.log('Check if account syncing has synced at least once');
-    await this.driver.wait(async () => {
-      const uiState = await getCleanAppState(this.driver);
-      return uiState.metamask.hasAccountTreeSyncingSyncedAtLeastOnce === true;
-    }, 30000); // Syncing can take some time so adding a longer timeout to reduce flakes
+    await this.driver.waitUntil(
+      async () => {
+        const uiState = await getCleanAppState(this.driver);
+        // Check for nullish, as the state we might seems to be `null` sometimes.
+        return (
+          uiState?.metamask?.hasAccountTreeSyncingSyncedAtLeastOnce === true
+        );
+      },
+      {
+        interval: BASE_ACCOUNT_SYNC_INTERVAL,
+        timeout: BASE_ACCOUNT_SYNC_TIMEOUT, // Syncing can take some time so adding a longer timeout to reduce flakes
+      },
+    );
   }
 
   async checkIfSendButtonIsClickable(): Promise<boolean> {
@@ -336,44 +497,31 @@ class HomePage {
   }
 
   async checkLocalNodeBalanceIsDisplayed(
-    localNode?: Ganache | Anvil,
+    localNode?: Anvil,
     address = null,
   ): Promise<void> {
     let expectedBalance: string;
     if (localNode) {
-      expectedBalance = (await localNode.getBalance(address)).toString();
+      const balance = await localNode.getBalance(address);
+      expectedBalance = balance.toFixed(3);
+      expectedBalance = Number(expectedBalance).toString();
     } else {
       expectedBalance = '25';
     }
     await this.checkExpectedBalanceIsDisplayed(expectedBalance);
   }
 
-  async getSkeleton(): Promise<
-    WebElement & {
-      waitForElementState: (state: string, timeout: number) => Promise<void>;
-    }
-  > {
-    return (await this.driver.waitForSelector('.mm-skeleton', {
-      state: 'visible',
-      timeout: 100,
-      // The `waitForSelector` method returns the wrong type.
-      // We supply that type in the return type, and we don't need to restate it here.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    })) as any;
-  }
-
-  async waitForSkeletonToDisappear(
-    skeleton: WebElement & {
-      waitForElementState: (state: string, timeout: number) => Promise<void>;
-    },
-  ): Promise<void> {
-    await skeleton.waitForElementState('hidden', this.driver.timeout);
-  }
-
-  async checkNewSrpAddedToastIsDisplayed(srpNumber: number = 2): Promise<void> {
+  async checkNewSrpAddedToastIsDisplayed(srpNumber = 2): Promise<void> {
     await this.driver.waitForSelector({
+      css: this.srpAddedToast,
       text: `Wallet ${srpNumber} imported`,
     });
+  }
+
+  async dismissSrpAddedToast(): Promise<void> {
+    console.log('Dismiss SRP added toast');
+    // The toast can take some time to appear
+    await this.driver.clickElementSafe(this.srpAddedToastCloseButton, 15_000);
   }
 
   async checkNoSurveyToastIsDisplayed(): Promise<void> {
@@ -415,9 +563,24 @@ class HomePage {
     await this.driver.waitForSelector(this.connectionsRemovedModal);
   }
 
+  async checkDefaultAddressIsDisplayed(): Promise<void> {
+    console.log('Check default address is displayed in header on homepage');
+    await this.driver.waitForSelector(this.defaultAddressContainer);
+  }
+
+  async checkDefaultAddressIsNotDisplayed(): Promise<void> {
+    console.log('Check default address is not displayed in header on homepage');
+    await this.driver.assertElementNotPresent(this.defaultAddressContainer);
+  }
+
   async checkShieldEntryModalIsDisplayed(): Promise<void> {
     console.log('Check shield entry modal is displayed on homepage');
     await this.driver.waitForSelector(this.shieldEntryModal);
+  }
+
+  async clickOnSendButton(): Promise<void> {
+    await this.driver.waitForSelector(this.sendButton);
+    await this.driver.clickElement(this.sendButton);
   }
 
   async clickOnShieldEntryModalGetStarted(): Promise<void> {
@@ -425,10 +588,28 @@ class HomePage {
     await this.driver.clickElement(this.shieldEntryModalGetStarted);
   }
 
+  async clickOnShieldEntryModalSkip(): Promise<void> {
+    console.log('Click on shield entry modal skip');
+    await this.driver.clickElement(this.shieldEntryModalSkip);
+  }
+
+  async clickOnSwapButton(): Promise<void> {
+    await this.driver.waitForSelector(this.swapButton);
+    await this.driver.clickElement(this.swapButton);
+  }
+
   async checkNoShieldEntryModalIsDisplayed(): Promise<void> {
     console.log('Check no shield entry modal is displayed on homepage');
     await this.driver.assertElementNotPresent(this.shieldEntryModal, {
-      timeout: 5000,
+      waitAtLeastGuard: regularDelayMs,
+    });
+  }
+
+  async checkShieldEntryModalNotPresent(): Promise<void> {
+    console.log('Check shield entry modal is not present on homepage');
+    await this.driver.assertElementNotPresent(this.shieldEntryModal, {
+      waitAtLeastGuard: regularDelayMs,
+      timeout: 2000,
     });
   }
 }

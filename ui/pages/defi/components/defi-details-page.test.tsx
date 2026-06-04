@@ -1,26 +1,34 @@
 import React from 'react';
+import { Route, Routes } from 'react-router-dom';
 import configureMockStore from 'redux-mock-store';
 import thunk from 'redux-thunk';
 import { CHAIN_IDS } from '../../../../shared/constants/network';
-import { renderWithProvider } from '../../../../test/jest/rendering';
+import { renderWithProvider } from '../../../../test/lib/render-helpers-navigate';
 import mockState from '../../../../test/data/mock-state.json';
 import DeFiPage from './defi-details-page';
 
-const mockUseParams = jest
-  .fn()
-  .mockReturnValue({ chainId: CHAIN_IDS.MAINNET, protocolId: 'aave' });
+const selectedAddress = '0x0dcd5d886577d5081b0c52e242ef29e70be3e7bc';
 
-jest.mock('react-router-dom', () => ({
-  ...jest.requireActual('react-router-dom'),
-  useParams: () => mockUseParams(),
+jest.mock('../../../../ui/hooks/musd/useMusdGeoBlocking', () => ({
+  ...jest.requireActual('../../../../ui/hooks/musd/useMusdGeoBlocking'),
+  useMusdGeoBlocking: () => ({
+    isBlocked: false,
+    userCountry: 'US',
+    isLoading: false,
+    error: null,
+    blockedRegions: [],
+    blockedMessage: null,
+    refreshGeolocation: jest.fn(),
+  }),
 }));
 
 describe('DeFiDetailsPage', () => {
   const mockStore = {
     ...mockState,
     metamask: {
+      ...mockState.metamask,
       allDeFiPositions: {
-        [mockState.metamask.selectedAddress]: {
+        [selectedAddress]: {
           '0x1': {
             aggregatedMarketValue: 20540,
             protocols: {
@@ -71,13 +79,12 @@ describe('DeFiDetailsPage', () => {
           },
         },
       },
-      ...mockState.metamask,
     },
   };
 
   const store = configureMockStore([thunk])(mockStore);
 
-  beforeAll(() => {
+  beforeEach(() => {
     jest.clearAllMocks();
   });
 
@@ -87,7 +94,13 @@ describe('DeFiDetailsPage', () => {
   });
 
   it('renders defi asset page', () => {
-    const { container } = renderWithProvider(<DeFiPage />, store);
+    const { container } = renderWithProvider(
+      <Routes>
+        <Route path="/defi/:chainId/:protocolId" element={<DeFiPage />} />
+      </Routes>,
+      store,
+      `/defi/${CHAIN_IDS.MAINNET}/aave`,
+    );
 
     expect(container).toMatchSnapshot();
   });

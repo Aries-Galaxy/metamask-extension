@@ -21,19 +21,23 @@ import {
 
 import { isEqual } from 'lodash';
 import { AccountGroupObject } from '@metamask/account-tree-controller';
+
+import { Tooltip } from 'react-tippy';
 import {
+  Box,
+  BoxAlignItems,
   BoxBackgroundColor,
+  BoxFlexDirection,
   BoxJustifyContent,
 } from '@metamask/design-system-react';
 import { useI18nContext } from '../../../hooks/useI18nContext';
 import { getPermissions } from '../../../selectors';
-import { getAllNetworkConfigurationsByCaipChainId } from '../../../../shared/modules/selectors/networks';
+import { getAllNetworkConfigurationsByCaipChainId } from '../../../../shared/lib/selectors/networks';
 import {
   AvatarBase,
   AvatarBaseSize,
   AvatarFavicon,
   AvatarFaviconSize,
-  Box,
   Button,
   ButtonLink,
   ButtonSize,
@@ -52,16 +56,13 @@ import {
 import {
   AlignItems,
   BackgroundColor,
-  BlockSize,
-  BorderRadius,
   Display,
-  FlexDirection,
   IconColor,
   JustifyContent,
   TextColor,
   TextVariant,
 } from '../../../helpers/constants/design-system';
-import { CAIP_FORMATTED_EVM_TEST_CHAINS } from '../../../../shared/constants/network';
+import { CAIP_FORMATTED_TEST_CHAINS } from '../../../../shared/constants/network';
 import { Tab, Tabs } from '../../../components/ui/tabs';
 import {
   getAvatarFallbackLetter,
@@ -81,6 +82,7 @@ import { useAccountGroupsForPermissions } from '../../../hooks/useAccountGroupsF
 import {
   PermissionsRequest,
   getCaip25CaveatValueFromPermissions,
+  // eslint-disable-next-line import-x/no-restricted-paths -- TODO(ADR-0021): route-isolation backlog
 } from '../../permissions-connect/connect-page/utils';
 import { MultichainSiteCell } from '../../../components/multichain-accounts/multichain-site-cell/multichain-site-cell';
 import { MultichainEditAccountsPage } from '../../../components/multichain-accounts/permissions/multichain-edit-accounts-page/multichain-edit-accounts-page';
@@ -89,6 +91,8 @@ import { selectBalanceForAllWallets } from '../../../selectors/assets';
 import { useFormatters } from '../../../hooks/useFormatters';
 import { AccountGroupWithInternalAccounts } from '../../../selectors/multichain-accounts/account-tree.types';
 import { getMultichainNetwork } from '../../../selectors/multichain';
+import { TrustSignalDisplayState } from '../../../hooks/useTrustSignals';
+import { useOriginTrustSignals } from '../../../hooks/useOriginTrustSignals';
 
 export type MultichainAccountsConnectPageRequest = {
   permissions?: PermissionsRequest;
@@ -118,21 +122,19 @@ export enum MultichainAccountsConnectPageMode {
   EditAccounts = 'edit-accounts',
 }
 
-export const MultichainAccountsConnectPage: React.FC<
-  MultichainConnectPageProps
-> = ({
+export const MultichainAccountsConnectPage = ({
   request,
   permissionsRequestId,
   rejectPermissionsRequest,
   approveConnection,
   targetSubjectMetadata,
-}) => {
+}: MultichainConnectPageProps) => {
   const t = useI18nContext();
-  const trackEvent = useContext(MetaMetricsContext);
+  const { trackEvent } = useContext(MetaMetricsContext);
   const [pageMode, setPageMode] = useState<MultichainAccountsConnectPageMode>(
     MultichainAccountsConnectPageMode.Summary,
   );
-  const { isEip1193Request } = request.metadata ?? {};
+  const [activeTab, setActiveTab] = useState('accounts');
   const { formatCurrencyWithMinThreshold } = useFormatters();
   const allBalances = useSelector(selectBalanceForAllWallets);
   const wallets = allBalances?.wallets;
@@ -190,6 +192,20 @@ export const MultichainAccountsConnectPage: React.FC<
     [requestedNamespaces],
   );
 
+  // Namespaces implied by the connecting client itself (independent of any
+  // already-granted scopes for this origin). These determine which networks
+  // we default-select when no specific chains are requested. We do NOT merge
+  // with already-granted scopes here so that, for example, an EIP-1193
+  // connect to an origin that already has Solana scopes does not silently
+  // default-select Solana networks again.
+  const requestedNamespacesFromRequestWithoutWallet = useMemo(
+    () =>
+      getAllNamespacesFromCaip25CaveatValue(requestedCaip25CaveatValue).filter(
+        (namespace) => namespace !== KnownCaipNamespace.Wallet,
+      ),
+    [requestedCaip25CaveatValue],
+  );
+
   const networkConfigurationsByCaipChainId = useSelector(
     getAllNetworkConfigurationsByCaipChainId,
   );
@@ -200,7 +216,7 @@ export const MultichainAccountsConnectPage: React.FC<
         ([nonTestNetworksList, testNetworksList], [chainId, network]) => {
           const caipChainId = chainId as CaipChainId;
           const isTestNetwork =
-            CAIP_FORMATTED_EVM_TEST_CHAINS.includes(caipChainId);
+            CAIP_FORMATTED_TEST_CHAINS.includes(caipChainId);
           (isTestNetwork ? testNetworksList : nonTestNetworksList).push({
             ...network,
             caipChainId,
@@ -239,32 +255,6 @@ export const MultichainAccountsConnectPage: React.FC<
       ...testNetworkConfigurations,
     ].map(({ caipChainId }) => caipChainId);
 
-    const walletRequest =
-      requestedCaipChainIds.filter(
-        (caipChainId) =>
-          parseCaipChainId(caipChainId).namespace === KnownCaipNamespace.Wallet,
-      ).length > 0;
-
-    let additionalChains: CaipChainId[] = [];
-    if (walletRequest && isEip1193Request) {
-      additionalChains = nonTestNetworkConfigurations
-        .map(({ caipChainId }) => caipChainId)
-        .filter((caipChainId) =>
-          requestedNamespacesWithoutWallet.includes(
-            parseCaipChainId(caipChainId).namespace,
-          ),
-        );
-    }
-
-    const supportedRequestedCaipChainIds = Array.from(
-      new Set([
-        ...requestedCaipChainIds.filter((requestedCaipChainId) =>
-          allNetworksList.includes(requestedCaipChainId as CaipChainId),
-        ),
-        ...additionalChains,
-      ]),
-    );
-
     // If globally selected network is a test network, include that in the default selected networks for connection request
     const currentlySelectedNetworkChainId = currentlySelectedNetwork.chainId;
     const selectedNetworkIsTestNetwork = testNetworkConfigurations.find(
@@ -278,6 +268,20 @@ export const MultichainAccountsConnectPage: React.FC<
         )
       : nonTestNetworkConfigurations.map(({ caipChainId }) => caipChainId);
 
+    const supportedRequestedCaipChainIds = requestedCaipChainIds.filter(
+      (requestedCaipChainId) =>
+        allNetworksList.includes(requestedCaipChainId as CaipChainId),
+    );
+
+    // If the request specified supported chains, default-select those merged
+    // with previously-permitted scopes. This covers requests that arrive with
+    // explicit scopes:
+    //   - EIP-1193 wallet_requestPermissions with restrictNetworkSwitching
+    //     (single eip155 chain)
+    //   - Solana Wallet Standard (single solana scope)
+    //   - Tron Wallet Adapter (single tron scope)
+    //   - Bitcoin / BIP-122 client (single bip122 scope)
+    //   - Multichain API requests with explicit non-wallet scopes
     if (supportedRequestedCaipChainIds.length > 0) {
       return Array.from(
         new Set([
@@ -287,26 +291,45 @@ export const MultichainAccountsConnectPage: React.FC<
       );
     }
 
-    if (requestedNamespaces.length > 0) {
+    // No specific chains were requested. Default the permitted-chains set to
+    // the namespace(s) the requesting client itself represents — do NOT
+    // grant cross-namespace access by default. This covers:
+    //   - EIP-1193 connect with no specific chains
+    //     (`wallet:eip155` only, requestedNamespaces = ['eip155'])
+    //     -> EVM popular networks only
+    //   - Multichain API requesting only wallet-namespaced scopes
+    //     (e.g. `wallet:eip155 + wallet:solana`)
+    //     -> popular networks for those namespaces only
+    // Previously-granted scopes for this origin are preserved by unioning in
+    // `alreadyConnectedCaipChainIds`, so a returning user does not lose scopes
+    // from another namespace they already approved.
+    if (requestedNamespacesFromRequestWithoutWallet.length > 0) {
+      const defaultSelectedNetworkListForRequestedNamespaces =
+        defaultSelectedNetworkList.filter((caipChainId) => {
+          const { namespace } = parseCaipChainId(caipChainId);
+          return requestedNamespacesFromRequestWithoutWallet.includes(
+            namespace,
+          );
+        });
+
       return Array.from(
-        new Set(
-          defaultSelectedNetworkList.filter((caipChainId) => {
-            const { namespace } = parseCaipChainId(caipChainId);
-            return requestedNamespaces.includes(namespace);
-          }),
-        ),
+        new Set([
+          ...defaultSelectedNetworkListForRequestedNamespaces,
+          ...alreadyConnectedCaipChainIds,
+        ]),
       );
     }
 
-    return defaultSelectedNetworkList;
+    // Fallback: no scopes and no namespaces could be inferred from the
+    // request. Preserve previously-granted scopes only; do not seed any new
+    // defaults.
+    return alreadyConnectedCaipChainIds;
   }, [
     nonTestNetworkConfigurations,
     testNetworkConfigurations,
     requestedCaipChainIds,
-    isEip1193Request,
     currentlySelectedNetwork.chainId,
-    requestedNamespaces,
-    requestedNamespacesWithoutWallet,
+    requestedNamespacesFromRequestWithoutWallet,
     alreadyConnectedCaipChainIds,
   ]);
 
@@ -484,6 +507,9 @@ export const MultichainAccountsConnectPage: React.FC<
   ]);
 
   const title = transformOriginToTitle(targetSubjectMetadata.origin);
+  const { state: trustSignalState } = useOriginTrustSignals(
+    targetSubjectMetadata.origin,
+  );
 
   const renderAccountCell = useCallback(
     (accountGroupId: AccountGroupObject['id']) => {
@@ -516,35 +542,19 @@ export const MultichainAccountsConnectPage: React.FC<
       className="main-container multichain-connect-page"
       backgroundColor={BackgroundColor.backgroundDefault}
     >
-      <Header paddingTop={8} paddingBottom={0}>
+      <Header paddingTop={8} paddingBottom={4}>
         <Box
-          display={Display.Flex}
-          justifyContent={JustifyContent.center}
+          className="flex"
+          justifyContent={BoxJustifyContent.Center}
           marginBottom={8}
         >
           {targetSubjectMetadata.iconUrl ? (
-            <>
-              <Box
-                style={{
-                  filter: 'blur(16px) brightness(1.1)',
-                  position: 'absolute',
-                }}
-              >
-                <AvatarFavicon
-                  backgroundColor={BackgroundColor.backgroundMuted}
-                  size={AvatarFaviconSize.Xl}
-                  src={targetSubjectMetadata.iconUrl}
-                  name={title}
-                />
-              </Box>
-              <AvatarFavicon
-                backgroundColor={BackgroundColor.backgroundMuted}
-                size={AvatarFaviconSize.Lg}
-                src={targetSubjectMetadata.iconUrl}
-                name={title}
-                style={{ zIndex: 1, background: 'transparent' }}
-              />
-            </>
+            <AvatarFavicon
+              backgroundColor={BackgroundColor.backgroundMuted}
+              size={AvatarFaviconSize.Lg}
+              src={targetSubjectMetadata.iconUrl}
+              name={title}
+            />
           ) : (
             <AvatarBase
               size={AvatarBaseSize.Lg}
@@ -559,10 +569,50 @@ export const MultichainAccountsConnectPage: React.FC<
             </AvatarBase>
           )}
         </Box>
-        <Text variant={TextVariant.headingLg} marginBottom={1}>
-          {title}
-        </Text>
-        <Box display={Display.Flex} justifyContent={JustifyContent.center}>
+        <Box
+          className="flex"
+          alignItems={BoxAlignItems.Center}
+          justifyContent={BoxJustifyContent.Center}
+          gap={2}
+          marginBottom={1}
+        >
+          <Text
+            variant={TextVariant.headingLg}
+            style={{
+              wordBreak: 'break-word',
+              whiteSpace: 'normal',
+            }}
+          >
+            {title}
+          </Text>
+          {trustSignalState === TrustSignalDisplayState.Verified && (
+            <Tooltip
+              title={t('alertReasonOriginTrustSignalVerified')}
+              position="bottom"
+              style={{ display: 'flex', paddingTop: '2px' }}
+            >
+              <Icon
+                name={IconName.VerifiedFilled}
+                color={IconColor.successDefault}
+                size={IconSize.Sm}
+              />
+            </Tooltip>
+          )}
+          {trustSignalState === TrustSignalDisplayState.Malicious && (
+            <Tooltip
+              title={t('trustSignalBlockTitle')}
+              position="bottom"
+              style={{ display: 'flex', paddingTop: '2px' }}
+            >
+              <Icon
+                name={IconName.Danger}
+                color={IconColor.errorDefault}
+                size={IconSize.Sm}
+              />
+            </Tooltip>
+          )}
+        </Box>
+        <Box className="flex" justifyContent={BoxJustifyContent.Center}>
           <Text color={TextColor.textAlternative}>
             {t('connectionDescription')}
           </Text>
@@ -573,35 +623,25 @@ export const MultichainAccountsConnectPage: React.FC<
         paddingRight={4}
         backgroundColor={BackgroundColor.transparent}
       >
-        <Tabs
-          onTabClick={() => null}
-          backgroundColor={BoxBackgroundColor.Transparent}
-          defaultActiveTabKey="accounts"
-          tabListProps={{
-            backgroundColor: BoxBackgroundColor.Transparent,
-            justifyContent: BoxJustifyContent.Center,
-          }}
-        >
+        <Tabs activeTab={activeTab} onTabClick={setActiveTab}>
           <Tab
-            className="multichain-connect-page__tab"
+            className="multichain-connect-page__tab flex-1"
             name={t('accounts')}
             tabKey="accounts"
             data-testid="accounts-tab"
           >
             <Box marginTop={4}>
               <Box
-                backgroundColor={BackgroundColor.backgroundDefault}
-                borderRadius={BorderRadius.XL}
+                backgroundColor={BoxBackgroundColor.BackgroundDefault}
+                className="rounded-xl"
               >
                 {selectedAccountGroupIds.map(renderAccountCell)}
               </Box>
               {selectedAccountGroupIds.length === 0 && (
                 <Box
-                  className="connect-page__accounts-empty"
-                  display={Display.Flex}
-                  justifyContent={JustifyContent.flexStart}
-                  alignItems={AlignItems.center}
-                  borderRadius={BorderRadius.XL}
+                  className="flex multichain-connect-page__accounts-empty rounded-xl"
+                  justifyContent={BoxJustifyContent.Start}
+                  alignItems={BoxAlignItems.Center}
                 >
                   <ButtonLink
                     onClick={setModeToEditAccounts}
@@ -613,19 +653,17 @@ export const MultichainAccountsConnectPage: React.FC<
               )}
               {selectedAccountGroupIds.length > 0 && (
                 <Box
+                  className="flex"
                   marginTop={4}
-                  display={Display.Flex}
-                  justifyContent={JustifyContent.flexStart}
+                  justifyContent={BoxJustifyContent.Start}
                   padding={4}
                 >
                   <Box
-                    className="connect-page__edit-icon"
+                    className="flex multichain-connect-page__edit-icon rounded-md"
                     marginRight={4}
-                    display={Display.Flex}
-                    alignItems={AlignItems.center}
-                    justifyContent={JustifyContent.center}
-                    backgroundColor={BackgroundColor.infoMuted}
-                    borderRadius={BorderRadius.MD}
+                    alignItems={BoxAlignItems.Center}
+                    justifyContent={BoxJustifyContent.Center}
+                    backgroundColor={BoxBackgroundColor.InfoMuted}
                     padding={2}
                   >
                     <Icon
@@ -647,7 +685,7 @@ export const MultichainAccountsConnectPage: React.FC<
           </Tab>
           <Tab
             name={t('permissions')}
-            className="multichain-connect-page__tab"
+            className="multichain-connect-page__tab flex-1"
             tabKey="permissions"
             data-testid="permissions-tab"
             disabled={selectedAccountGroupIds.length === 0}
@@ -669,12 +707,11 @@ export const MultichainAccountsConnectPage: React.FC<
       </Content>
       <Footer>
         <Box
-          display={Display.Flex}
-          flexDirection={FlexDirection.Column}
+          flexDirection={BoxFlexDirection.Column}
           gap={4}
-          width={BlockSize.Full}
+          className="flex w-full"
         >
-          <Box display={Display.Flex} gap={4} width={BlockSize.Full}>
+          <Box gap={4} className="flex w-full">
             <Button
               block
               variant={ButtonVariant.Secondary}
@@ -689,6 +726,12 @@ export const MultichainAccountsConnectPage: React.FC<
               data-testid="confirm-btn"
               size={ButtonSize.Lg}
               onClick={onConfirm}
+              danger={trustSignalState === TrustSignalDisplayState.Malicious}
+              startIconName={
+                trustSignalState === TrustSignalDisplayState.Malicious
+                  ? IconName.Danger
+                  : undefined
+              }
               disabled={
                 selectedAccountGroupIds.length === 0 ||
                 selectedChainIds.length === 0

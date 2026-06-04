@@ -1,12 +1,11 @@
 import React, { useContext, useState, useEffect } from 'react';
-import type { FC } from 'react';
-import type { NotificationServicesController } from '@metamask/notification-services-controller';
+import type { OnChainRawNotificationsWithNetworkFields } from '@metamask/notification-services-controller/notification-services';
 
 import { useI18nContext } from '../../../hooks/useI18nContext';
 import { MetaMetricsContext } from '../../../contexts/metametrics';
 import {
+  getNetworkDetailsFromNotifPayload,
   getNetworkFees,
-  getNetworkDetailsByChainId,
 } from '../../../helpers/utils/notification.util';
 import {
   MetaMetricsEventCategory,
@@ -35,9 +34,7 @@ import {
   FlexDirection,
 } from '../../../helpers/constants/design-system';
 import Preloader from '../../ui/icon/preloader/preloader-icon.component';
-
-type OnChainRawNotificationsWithNetworkFields =
-  NotificationServicesController.Types.OnChainRawNotificationsWithNetworkFields;
+import { useBoolean } from '../../../hooks/useBoolean';
 
 type NetworkFees = {
   transactionFee: {
@@ -86,21 +83,19 @@ const FeeDetail = ({ label, value }: { label: string; value: string }) => (
  * @deprecated - we are planning to remove this component
  * @returns The NotificationDetailNetworkFee component.
  */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _NotificationDetailNetworkFee: FC<NotificationDetailNetworkFeeProps> = ({
+// eslint-disable-next-line @typescript-eslint/no-unused-vars, @typescript-eslint/naming-convention
+const NotificationDetailNetworkFee_ = ({
   notification,
-}) => {
+}: NotificationDetailNetworkFeeProps) => {
   const t = useI18nContext();
-  const trackEvent = useContext(MetaMetricsContext);
-  const [isOpen, setIsOpen] = useState<boolean>(false);
+  const { trackEvent } = useContext(MetaMetricsContext);
+  const { value: isOpen, toggle } = useBoolean();
   const [networkFees, setNetworkFees] = useState<NetworkFees>(null);
   const [networkFeesError, setNetworkFeesError] = useState<boolean>(false);
 
-  const getNativeCurrency = (n: OnChainRawNotificationsWithNetworkFields) => {
-    return getNetworkDetailsByChainId(n.chain_id);
-  };
-
-  const nativeCurrency = getNativeCurrency(notification);
+  const { nativeCurrencySymbol } = getNetworkDetailsFromNotifPayload(
+    notification.payload.network,
+  );
 
   useEffect(() => {
     const fetchNetworkFees = async () => {
@@ -124,7 +119,7 @@ const _NotificationDetailNetworkFee: FC<NotificationDetailNetworkFeeProps> = ({
       }
     };
     fetchNetworkFees();
-  }, []);
+  }, [notification]);
 
   const handleClick = () => {
     if (!isOpen) {
@@ -140,14 +135,14 @@ const _NotificationDetailNetworkFee: FC<NotificationDetailNetworkFeeProps> = ({
           notification_type: notification.type,
           // TODO: Fix in https://github.com/MetaMask/metamask-extension/issues/31860
           // eslint-disable-next-line @typescript-eslint/naming-convention
-          chain_id: notification.chain_id,
+          chain_id: notification.payload.chain_id,
           // TODO: Fix in https://github.com/MetaMask/metamask-extension/issues/31860
           // eslint-disable-next-line @typescript-eslint/naming-convention
           clicked_item: 'fee_details',
         },
       });
     }
-    setIsOpen(!isOpen);
+    toggle();
   };
 
   if (!networkFees && !networkFeesError) {
@@ -219,7 +214,7 @@ const _NotificationDetailNetworkFee: FC<NotificationDetailNetworkFeeProps> = ({
             color={TextColor.textAlternative}
           >
             {networkFees?.transactionFee.transactionFeeInEther}{' '}
-            {nativeCurrency?.nativeCurrencySymbol} (
+            {nativeCurrencySymbol} (
             {networkFees?.transactionFee.transactionFeeInUsd} USD)
           </Text>
         }

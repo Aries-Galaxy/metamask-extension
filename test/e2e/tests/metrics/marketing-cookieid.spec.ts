@@ -4,17 +4,16 @@ import { MockedEndpoint, Mockttp } from 'mockttp';
 import {
   getCleanAppState,
   getEventPayloads,
-  WINDOW_TITLES,
   withFixtures,
 } from '../../helpers';
 import { TestSuiteArguments } from '../confirmations/transactions/shared';
-import FixtureBuilder from '../../fixture-builder';
-import { MOCK_META_METRICS_ID } from '../../constants';
+import FixtureBuilderV2 from '../../fixtures/fixture-builder-v2';
+import { MOCK_META_METRICS_ID, WINDOW_TITLES } from '../../constants';
 import HomePage from '../../page-objects/pages/home/homepage';
 import PrivacySettings from '../../page-objects/pages/settings/privacy-settings';
 import SettingsPage from '../../page-objects/pages/settings/settings-page';
 import TestDapp from '../../page-objects/pages/test-dapp';
-import { loginWithBalanceValidation } from '../../page-objects/flows/login.flow';
+import { login } from '../../page-objects/flows/login.flow';
 
 /**
  * mocks the segment api multiple times for specific payloads that we expect to
@@ -45,9 +44,10 @@ describe('Marketing cookieId', function (this: Suite) {
   it('should be send to segment when preferences are enabled', async function () {
     await withFixtures(
       {
-        dapp: true,
-        dappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
-        fixtures: new FixtureBuilder()
+        dappOptions: {
+          customDappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
+        },
+        fixtures: new FixtureBuilderV2()
           .withMetaMetricsController({
             metaMetricsId: MOCK_META_METRICS_ID,
             participateInMetaMetrics: true,
@@ -61,7 +61,7 @@ describe('Marketing cookieId', function (this: Suite) {
         driver,
         mockedEndpoint: mockedEndpoints,
       }: TestSuiteArguments) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
         const dappPage = new TestDapp(driver);
         await dappPage.openTestDappPage();
         await driver.switchToWindowWithTitle(
@@ -76,7 +76,7 @@ describe('Marketing cookieId', function (this: Suite) {
 
         const homePage = new HomePage(driver);
         await homePage.checkPageIsLoaded();
-        await homePage.headerNavbar.openThreeDotMenu();
+        await homePage.headerNavbar.openGlobalMenu();
         const events = await getEventPayloads(
           driver,
           mockedEndpoints as MockedEndpoint[],
@@ -90,9 +90,10 @@ describe('Marketing cookieId', function (this: Suite) {
   it('should not be send to segment when dataCollectionForMarketing is never toggled on', async function () {
     await withFixtures(
       {
-        dapp: true,
-        dappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
-        fixtures: new FixtureBuilder()
+        dappOptions: {
+          customDappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
+        },
+        fixtures: new FixtureBuilderV2()
           .withMetaMetricsController({
             metaMetricsId: MOCK_META_METRICS_ID,
             participateInMetaMetrics: true,
@@ -105,7 +106,7 @@ describe('Marketing cookieId', function (this: Suite) {
         driver,
         mockedEndpoint: mockedEndpoints,
       }: TestSuiteArguments) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
         const dappPage = new TestDapp(driver);
         await dappPage.openTestDappPage();
 
@@ -121,7 +122,7 @@ describe('Marketing cookieId', function (this: Suite) {
 
         const homePage = new HomePage(driver);
         await homePage.checkPageIsLoaded();
-        await homePage.headerNavbar.openThreeDotMenu();
+        await homePage.headerNavbar.openGlobalMenu();
         const events = await getEventPayloads(
           driver,
           mockedEndpoints as MockedEndpoint[],
@@ -135,9 +136,10 @@ describe('Marketing cookieId', function (this: Suite) {
   it('should not be send to segment when participateInMetaMetrics is never toggled on ', async function () {
     await withFixtures(
       {
-        dapp: true,
-        dappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
-        fixtures: new FixtureBuilder().withMetaMetricsController().build(),
+        dappOptions: {
+          customDappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
+        },
+        fixtures: new FixtureBuilderV2().build(),
         title: this.test?.fullTitle(),
         testSpecificMock: mockSegment,
       },
@@ -145,7 +147,7 @@ describe('Marketing cookieId', function (this: Suite) {
         driver,
         mockedEndpoint: mockedEndpoints,
       }: TestSuiteArguments) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
         const dappPage = new TestDapp(driver);
         await dappPage.openTestDappPage();
 
@@ -161,7 +163,7 @@ describe('Marketing cookieId', function (this: Suite) {
 
         const homePage = new HomePage(driver);
         await homePage.checkPageIsLoaded();
-        await homePage.headerNavbar.openThreeDotMenu();
+        await homePage.headerNavbar.openGlobalMenu();
         const events = await getEventPayloads(
           driver,
           mockedEndpoints as MockedEndpoint[],
@@ -173,9 +175,10 @@ describe('Marketing cookieId', function (this: Suite) {
   it('should updates marketingCampaignCookieId to null when dataCollectionForMarketing is toggled off ', async function () {
     await withFixtures(
       {
-        dapp: true,
-        dappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
-        fixtures: new FixtureBuilder()
+        dappOptions: {
+          customDappPaths: ['./tests/metrics/marketing-cookieid-mock-page'],
+        },
+        fixtures: new FixtureBuilderV2()
           .withMetaMetricsController({
             metaMetricsId: MOCK_META_METRICS_ID,
             participateInMetaMetrics: true,
@@ -189,7 +192,7 @@ describe('Marketing cookieId', function (this: Suite) {
         driver,
         mockedEndpoint: mockedEndpoints,
       }: TestSuiteArguments) => {
-        await loginWithBalanceValidation(driver);
+        await login(driver);
         const dappPage = new TestDapp(driver);
         await dappPage.openTestDappPage();
 

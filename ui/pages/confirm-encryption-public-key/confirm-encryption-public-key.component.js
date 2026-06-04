@@ -8,8 +8,9 @@ import { PageContainerFooter } from '../../components/ui/page-container';
 
 import { MetaMetricsEventCategory } from '../../../shared/constants/metametrics';
 import SiteOrigin from '../../components/ui/site-origin';
-import { Numeric } from '../../../shared/modules/Numeric';
+import { Numeric } from '../../../shared/lib/Numeric';
 import { EtherDenomination } from '../../../shared/constants/common';
+// eslint-disable-next-line import-x/no-restricted-paths -- TODO(ADR-0021): route-isolation backlog
 import { Nav } from '../confirmations/components/confirm/nav';
 
 export default class ConfirmEncryptionPublicKey extends Component {
@@ -27,7 +28,7 @@ export default class ConfirmEncryptionPublicKey extends Component {
     clearConfirmTransaction: PropTypes.func.isRequired,
     cancelEncryptionPublicKey: PropTypes.func.isRequired,
     encryptionPublicKey: PropTypes.func.isRequired,
-    history: PropTypes.object.isRequired,
+    navigate: PropTypes.func.isRequired,
     requesterAddress: PropTypes.string,
     txData: PropTypes.object,
     subjectMetadata: PropTypes.object,
@@ -165,7 +166,7 @@ export default class ConfirmEncryptionPublicKey extends Component {
       cancelEncryptionPublicKey,
       clearConfirmTransaction,
       encryptionPublicKey,
-      history,
+      navigate,
       mostRecentOverviewPage,
       txData,
     } = this.props;
@@ -186,7 +187,7 @@ export default class ConfirmEncryptionPublicKey extends Component {
             },
           });
           clearConfirmTransaction();
-          history.push(mostRecentOverviewPage);
+          navigate(mostRecentOverviewPage);
         }}
         onSubmit={async (event) => {
           await encryptionPublicKey(txData, event);
@@ -199,7 +200,7 @@ export default class ConfirmEncryptionPublicKey extends Component {
             },
           });
           clearConfirmTransaction();
-          history.push(mostRecentOverviewPage);
+          navigate(mostRecentOverviewPage);
         }}
       />
     );

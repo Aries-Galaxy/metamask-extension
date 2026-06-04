@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import classnames from 'classnames';
+import classnames from 'clsx';
 
 import {
   Display,
@@ -93,6 +93,8 @@ export const TextField: TextFieldComponent = React.forwardRef(
       // Check if an external ref (inputRef) is provided and is a ref object
       if (inputRef && 'current' in inputRef) {
         // Assign the input element reference to the external ref
+        // TODO: Use `ref` prop instead. `forwardRef` is deprecated in React v19.
+        // eslint-disable-next-line react-compiler/react-compiler
         inputRef.current = inputElementRef;
       }
       // Check if an external ref (inputRef) is a callback function

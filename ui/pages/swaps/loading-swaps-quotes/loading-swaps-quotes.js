@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useContext } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import PropTypes from 'prop-types';
 import { shuffle } from 'lodash';
-import { useHistory } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import isEqual from 'lodash/isEqual';
 import {
   navigateBackToPrepareSwap,
@@ -11,15 +11,15 @@ import {
   getQuotesFetchStartTime,
   getCurrentSmartTransactionsEnabled,
 } from '../../../ducks/swaps/swaps';
+import { getHDEntropyIndex } from '../../../selectors/selectors';
 import {
   isHardwareWallet,
   getHardwareWalletType,
-  getHDEntropyIndex,
-} from '../../../selectors/selectors';
+} from '../../../../shared/lib/selectors/keyring';
 import {
   getSmartTransactionsEnabled,
   getSmartTransactionsOptInStatusForMetrics,
-} from '../../../../shared/modules/selectors';
+} from '../../../../shared/lib/selectors';
 import { I18nContext } from '../../../contexts/i18n';
 import { MetaMetricsContext } from '../../../contexts/metametrics';
 import Mascot from '../../../components/ui/mascot';
@@ -34,7 +34,7 @@ import {
   JustifyContent,
   TextTransform,
 } from '../../../helpers/constants/design-system';
-import { isFlask, isBeta } from '../../../helpers/utils/build-types';
+import { isFlask, isBeta } from '../../../../shared/lib/build-types';
 import BackgroundAnimation from './background-animation';
 
 export default function LoadingSwapsQuotes({
@@ -43,10 +43,10 @@ export default function LoadingSwapsQuotes({
   onDone,
 }) {
   const t = useContext(I18nContext);
-  const trackEvent = useContext(MetaMetricsContext);
+  const { trackEvent } = useContext(MetaMetricsContext);
   const dispatch = useDispatch();
   const hdEntropyIndex = useSelector(getHDEntropyIndex);
-  const history = useHistory();
+  const navigate = useNavigate();
   const animationEventEmitter = useRef(new EventEmitter());
 
   const fetchParams = useSelector(getFetchParams, isEqual);
@@ -205,7 +205,7 @@ export default function LoadingSwapsQuotes({
         submitText={t('back')}
         onSubmit={async () => {
           trackEvent(quotesRequestCancelledEventConfig);
-          await dispatch(navigateBackToPrepareSwap(history));
+          await dispatch(navigateBackToPrepareSwap(navigate));
         }}
         hideCancel
       />

@@ -3,10 +3,10 @@ import * as ReactRedux from 'react-redux';
 import * as NotificationHooks from '../../hooks/metamask-notifications/useNotifications';
 import * as NotificationsSelectors from '../../selectors/metamask-notifications/metamask-notifications';
 import * as Selectors from '../../selectors/selectors';
-import * as MetamaskDucks from '../../ducks/metamask/metamask';
+import * as MetamaskBaseSelectors from '../../ducks/metamask/base-selectors';
 import * as AuthenticationSelectors from '../../selectors/identity/authentication';
 import * as StorageHelpers from '../../../shared/lib/storage-helpers';
-import { renderHookWithProvider } from '../../../test/lib/render-helpers';
+import { renderHookWithProvider } from '../../../test/lib/render-helpers-navigate';
 import {
   useBasicFunctionalityDisableEffect,
   useEnableNotificationsByDefaultEffect,
@@ -206,7 +206,7 @@ describe('useFetchInitialNotificationsEffect', () => {
       .mockReturnValue(true);
 
     const mockGetIsUnlocked = jest
-      .spyOn(MetamaskDucks, 'getIsUnlocked')
+      .spyOn(MetamaskBaseSelectors, 'getIsUnlocked')
       .mockReturnValue(true);
 
     const mockSelectIsSignedIn = jest
@@ -457,7 +457,7 @@ describe('useEnableNotificationsByDefaultEffect', () => {
       .mockReturnValue(true);
 
     const mockGetIsUnlocked = jest
-      .spyOn(MetamaskDucks, 'getIsUnlocked')
+      .spyOn(MetamaskBaseSelectors, 'getIsUnlocked')
       .mockReturnValue(true);
 
     const mockGetIsNotificationEnabledByDefaultFeatureFlag = jest

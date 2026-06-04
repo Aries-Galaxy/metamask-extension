@@ -21,10 +21,8 @@ import {
   TextVariant,
 } from '../../../helpers/constants/design-system';
 import { setShowMultiRpcModal } from '../../../store/actions';
-// TODO: Remove restricted import
-// eslint-disable-next-line import/no-restricted-paths
-import { getEnvironmentType } from '../../../../app/scripts/lib/util';
-import { getNetworkConfigurationsByChainId } from '../../../../shared/modules/selectors/networks';
+import { getEnvironmentType } from '../../../../shared/lib/environment-type';
+import { getNetworkConfigurationsByChainId } from '../../../../shared/lib/selectors/networks';
 import { ENVIRONMENT_TYPE_POPUP } from '../../../../shared/constants/app';
 import NetworkListItem from './network-list-item/network-list-item';
 

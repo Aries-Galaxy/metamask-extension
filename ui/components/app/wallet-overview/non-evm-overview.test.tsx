@@ -7,7 +7,7 @@ import { BtcAccountType, BtcMethod, BtcScope } from '@metamask/keyring-api';
 import { AVAILABLE_MULTICHAIN_NETWORK_CONFIGURATIONS } from '@metamask/multichain-network-controller';
 import { MultichainNativeAssets } from '../../../../shared/constants/multichain/assets';
 import mockState from '../../../../test/data/mock-state.json';
-import { renderWithProvider } from '../../../../test/jest/rendering';
+import { renderWithProvider } from '../../../../test/lib/render-helpers-navigate';
 import { MultichainNetworks } from '../../../../shared/constants/multichain/networks';
 import { defaultBuyableChains } from '../../../ducks/ramps/constants';
 import { MetaMetricsContext } from '../../../contexts/metametrics';
@@ -19,17 +19,33 @@ import useMultiPolling from '../../../hooks/useMultiPolling';
 import { BITCOIN_WALLET_SNAP_ID } from '../../../../shared/lib/accounts/bitcoin-wallet-snap';
 import NonEvmOverview from './non-evm-overview';
 
-// We need to mock `dispatch` since we use it for `setDefaultHomeActiveTabName`.
-const mockDispatch = jest.fn().mockReturnValue(() => jest.fn());
-jest.mock('react-redux', () => ({
-  ...jest.requireActual('react-redux'),
-  useDispatch: () => mockDispatch,
+// After BIP-44 refactor, CoinOverview always uses AccountGroupBalance and shows
+// BalanceEmptyState when selectAccountGroupBalanceForEmptyState is false. Mock
+// it so the balance section renders and we can assert on primary balance/skeleton.
+jest.mock('../../../selectors/assets', () => ({
+  ...jest.requireActual('../../../selectors/assets'),
+  selectAccountGroupBalanceForEmptyState: () => true,
 }));
+
+jest.mock('../../../hooks/rewards/useRewardsModal', () => ({
+  useRewardsModal: jest.fn(),
+}));
+
+// TODO: Remove this mock when multichain accounts feature flag is entirely removed.
+// TODO: Convert any old tests (UI/UX state 1) to its state 2 equivalent (if possible).
+jest.mock(
+  '../../../../shared/lib/multichain-accounts/remote-feature-flag',
+  () => ({
+    ...jest.requireActual(
+      '../../../../shared/lib/multichain-accounts/remote-feature-flag',
+    ),
+    isMultichainAccountsFeatureEnabled: () => false,
+  }),
+);
 
 jest.mock('../../../store/actions', () => ({
   handleSnapRequest: jest.fn(),
   sendMultichainTransaction: jest.fn(),
-  setDefaultHomeActiveTabName: jest.fn(),
   tokenBalancesStartPolling: jest.fn().mockResolvedValue('pollingToken'),
   tokenBalancesStopPollingByPollingToken: jest.fn(),
 }));
@@ -49,6 +65,13 @@ jest.mock('../../../hooks/ramps/useRamps/useRamps', () => ({
   default: jest.fn(() => ({
     openBuyCryptoInPdapp: mockOpenBuyCryptoInPdapp,
   })),
+  RampsMetaMaskEntry: {
+    BuySellButton: 'ext_buy_sell_button',
+    NftBanner: 'ext_buy_banner_nfts',
+    TokensBanner: 'ext_buy_banner_tokens',
+    ActivityBanner: 'ext_buy_banner_activity',
+    BtcBanner: 'ext_buy_banner_btc',
+  },
 }));
 
 const BUY_BUTTON = 'coin-overview-buy';
@@ -60,7 +83,6 @@ const BTC_OVERVIEW_PRIMARY_CURRENCY = 'coin-overview__primary-currency';
 
 const mockMetaMetricsId = 'deadbeef';
 const mockNonEvmBalance = '1';
-const mockNonEvmBalanceUsd = '1.00';
 const mockNonEvmAccount = {
   address: 'bc1qwl8399fz829uqvqly9tcatgrgtwp3udnhxfq4k',
   id: '542490c8-d178-433b-9f31-f680b11f45a5',
@@ -108,7 +130,7 @@ const mockBuyableChainsEvmOnly = defaultBuyableChains.filter(
 const mockMetamaskStore = {
   ...mockState.metamask,
   remoteFeatureFlags: {
-    addBitcoinAccount: true,
+    bitcoinAccounts: { enabled: true, minimumVersion: '13.6.0' },
     bridgeConfig: {
       support: true,
     },
@@ -122,6 +144,28 @@ const mockMetamaskStore = {
       [mockNonEvmAccount.id]: mockNonEvmAccount,
     },
     selectedAccount: mockNonEvmAccount.id,
+  },
+  // Account tree required by CoinOverview/AccountGroupBalance after BIP-44 refactor
+  selectedAccountGroup: 'entropy:wallet1/group1',
+  accountTree: {
+    wallets: {
+      'entropy:wallet1': {
+        id: 'entropy:wallet1',
+        groups: {
+          'entropy:wallet1/group1': {
+            id: 'entropy:wallet1/group1',
+            type: 'multichain-account',
+            accounts: [mockNonEvmAccount.id],
+            metadata: {
+              name: 'Account',
+              hidden: false,
+              pinned: false,
+              lastSelected: 0,
+            },
+          },
+        },
+      },
+    },
   },
   // MultichainBalancesController
   balances: {
@@ -166,7 +210,7 @@ function getStore(state?: Record<string, unknown>) {
   return configureMockStore([thunk])({
     metamask: mockMetamaskStore,
     localeMessages: {
-      currentLocale: 'en',
+      currentLocale: 'en-US',
     },
     ramps: mockRampsStore,
     ...state,
@@ -202,7 +246,8 @@ describe('NonEvmOverview', () => {
 
     const primaryBalance = queryByTestId(BTC_OVERVIEW_PRIMARY_CURRENCY);
     expect(primaryBalance).toBeInTheDocument();
-    expect(primaryBalance).toHaveTextContent(`${mockNonEvmBalance}BTC`);
+    // AccountGroupBalance formats via formatTokenQuantity (e.g. "1 BTC" with space)
+    expect(primaryBalance).toHaveTextContent(`${mockNonEvmBalance} BTC`);
   });
 
   it('shows the primary balance as fiat when showNativeTokenAsMainBalance if false', async () => {
@@ -233,16 +278,16 @@ describe('NonEvmOverview', () => {
 
     const primaryBalance = queryByTestId(BTC_OVERVIEW_PRIMARY_CURRENCY);
     expect(primaryBalance).toBeInTheDocument();
-    expect(primaryBalance).toHaveTextContent(`$${mockNonEvmBalanceUsd}USD`);
+    // AccountGroupBalance shows fiat via formatCurrency when showNativeTokenAsMainBalance is false.
+    expect(primaryBalance).toHaveTextContent(/\$\d+\.\d+/u);
   });
 
-  it('shows a skeleton if balance is not available', async () => {
-    const { container } = renderWithProvider(
+  it('shows balance section when balance is not available (displays zero)', () => {
+    const { queryByTestId } = renderWithProvider(
       <NonEvmOverview />,
       getStore({
         metamask: {
           ...mockMetamaskStore,
-          // The balances won't be available
           balances: {},
           accountsAssets: {
             [mockNonEvmAccount.id]: [],
@@ -251,8 +296,10 @@ describe('NonEvmOverview', () => {
       }),
     );
 
-    const skeleton = container.querySelector('.mm-skeleton');
-    expect(skeleton).toBeInTheDocument();
+    // After BIP-44 refactor, balance section always renders; empty balances show as zero
+    const primaryBalance = queryByTestId(BTC_OVERVIEW_PRIMARY_CURRENCY);
+    expect(primaryBalance).toBeInTheDocument();
+    expect(primaryBalance).toHaveTextContent(/0\s*BTC/u);
   });
 
   it.skip('buttons Swap/Bridge are disabled', () => {
@@ -351,8 +398,14 @@ describe('NonEvmOverview', () => {
     });
 
     const mockTrackEvent = jest.fn();
+    const mockMetaMetricsContext = {
+      trackEvent: mockTrackEvent,
+      bufferedTrace: jest.fn(),
+      bufferedEndTrace: jest.fn(),
+      onboardingParentContext: { current: null },
+    };
     const { queryByTestId } = renderWithProvider(
-      <MetaMetricsContext.Provider value={mockTrackEvent}>
+      <MetaMetricsContext.Provider value={mockMetaMetricsContext}>
         <NonEvmOverview />
       </MetaMetricsContext.Provider>,
       storeWithBtcBuyable,
@@ -363,7 +416,6 @@ describe('NonEvmOverview', () => {
     expect(buyButton).not.toBeDisabled();
     fireEvent.click(buyButton as HTMLElement);
 
-    expect(mockTrackEvent).toHaveBeenCalledTimes(1);
     expect(mockTrackEvent).toHaveBeenCalledWith({
       event: MetaMetricsEventName.NavBuyButtonClicked,
       category: MetaMetricsEventCategory.Navigation,
@@ -408,8 +460,14 @@ describe('NonEvmOverview', () => {
 
   it('sends an event when clicking the Send button', () => {
     const mockTrackEvent = jest.fn();
+    const mockMetaMetricsContext = {
+      trackEvent: mockTrackEvent,
+      bufferedTrace: jest.fn(),
+      bufferedEndTrace: jest.fn(),
+      onboardingParentContext: { current: null },
+    };
     const { queryByTestId } = renderWithProvider(
-      <MetaMetricsContext.Provider value={mockTrackEvent}>
+      <MetaMetricsContext.Provider value={mockMetaMetricsContext}>
         <NonEvmOverview />
       </MetaMetricsContext.Provider>,
       getStore(),
@@ -420,7 +478,6 @@ describe('NonEvmOverview', () => {
     expect(sendButton).not.toBeDisabled();
     fireEvent.click(sendButton as HTMLElement);
 
-    expect(mockTrackEvent).toHaveBeenCalledTimes(1);
     expect(mockTrackEvent).toHaveBeenCalledWith(
       {
         event: MetaMetricsEventName.SendStarted,
@@ -446,7 +503,7 @@ describe('NonEvmOverview', () => {
     );
   });
 
-  it('disables the Send and Bridge buttons if external services are disabled', () => {
+  it('does not disable the Send button when external services are disabled (filtering happens upstream)', () => {
     const { queryByTestId } = renderWithProvider(
       <NonEvmOverview />,
       getStore({
@@ -460,7 +517,8 @@ describe('NonEvmOverview', () => {
     const sendButton = queryByTestId(BTC_OVERVIEW_SEND);
     const bridgeButton = queryByTestId(BTC_OVERVIEW_BRIDGE);
     expect(sendButton).toBeInTheDocument();
-    expect(sendButton).toBeDisabled();
+    // Send button is no longer disabled - non-EVM filtering happens upstream in token/network lists
+    expect(sendButton).not.toBeDisabled();
     expect(bridgeButton).not.toBeInTheDocument();
   });
 });

@@ -1,23 +1,14 @@
 import React, { useContext, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import classnames from 'classnames';
+import { useNavigate } from 'react-router-dom';
+import classnames from 'clsx';
 import { CaipChainId } from '@metamask/utils';
 import type { Hex } from '@metamask/utils';
 
 import { InternalAccount } from '@metamask/keyring-internal-api';
-import { getNativeTokenAddress } from '@metamask/assets-controllers';
-import {
-  Box,
-  ButtonIcon,
-  ButtonIconSize,
-  ButtonLink,
-  IconName,
-} from '../../component-library';
-import {
-  JustifyContent,
-  TextVariant,
-  IconColor,
-} from '../../../helpers/constants/design-system';
+import { Box } from '@metamask/design-system-react';
+import { ButtonLink, IconName } from '../../component-library';
+import { TextVariant } from '../../../helpers/constants/design-system';
 import { getPortfolioUrl } from '../../../helpers/utils/portfolio';
 import { MetaMetricsContext } from '../../../contexts/metametrics';
 import {
@@ -26,13 +17,13 @@ import {
 } from '../../../../shared/constants/metametrics';
 
 import { I18nContext } from '../../../contexts/i18n';
+import { getMultichainAccountAddressListReceivePagePath } from '../../../pages/multichain-accounts/multichain-account-address-list-page';
 import Tooltip from '../../ui/tooltip';
 import UserPreferencedCurrencyDisplay from '../user-preferenced-currency-display';
 import { PRIMARY, SECONDARY } from '../../../helpers/constants/common';
+import { trace, TraceName } from '../../../../shared/lib/trace';
 import {
-  getPreferences,
   getShouldHideZeroBalanceTokens,
-  getTokensMarketData,
   getIsTestnet,
   getIsTokenNetworkFilterEqualCurrentNetwork,
   getChainIdsToPoll,
@@ -40,18 +31,16 @@ import {
   getMetaMetricsId,
   getParticipateInMetaMetrics,
   getEnabledNetworksByNamespace,
-  isGlobalNetworkSelectorRemoved,
-  getIsMultichainAccountsState2Enabled,
   selectAnyEnabledNetworksAreAvailable,
 } from '../../../selectors';
+import { getPreferences } from '../../../../shared/lib/selectors/preferences';
 
-import { PercentageAndAmountChange } from '../../multichain/token-list-item/price/percentage-and-amount-change/percentage-and-amount-change';
 import { AccountGroupBalance } from '../assets/account-group-balance/account-group-balance';
 import { AccountGroupBalanceChange } from '../assets/account-group-balance-change/account-group-balance-change';
 
 import {
-  getMultichainIsEvm,
   getMultichainShouldShowFiat,
+  getMultichainIsTestnet,
 } from '../../../selectors/multichain';
 import { setPrivacyMode } from '../../../store/actions';
 import { useI18nContext } from '../../../hooks/useI18nContext';
@@ -59,16 +48,14 @@ import { useAccountTotalCrossChainFiatBalance } from '../../../hooks/useAccountT
 
 import { useGetFormattedTokensPerChain } from '../../../hooks/useGetFormattedTokensPerChain';
 import { useMultichainSelector } from '../../../hooks/useMultichainSelector';
-import { AggregatedBalance } from '../../ui/aggregated-balance/aggregated-balance';
+import { useRewardsModal } from '../../../hooks/rewards/useRewardsModal';
 import { Skeleton } from '../../component-library/skeleton';
 import { isZeroAmount } from '../../../helpers/utils/number-utils';
+import { BalanceEmptyState } from '../balance-empty-state';
+import { selectAccountGroupBalanceForEmptyState } from '../../../selectors/assets';
+import { getSelectedAccountGroup } from '../../../selectors/multichain-accounts/account-tree';
 import WalletOverview from './wallet-overview';
 import CoinButtons from './coin-buttons';
-import {
-  AggregatedMultichainPercentageOverview,
-  AggregatedPercentageOverview,
-} from './aggregated-percentage-overview';
-import { AggregatedPercentageOverviewCrossChains } from './aggregated-percentage-overview-cross-chains';
 
 export type CoinOverviewProps = {
   account: InternalAccount;
@@ -129,9 +116,8 @@ export const LegacyAggregatedBalance = ({
     selectAnyEnabledNetworksAreAvailable,
   );
 
-  const showNativeTokenAsMain = isGlobalNetworkSelectorRemoved
-    ? showNativeTokenAsMainBalance && Object.keys(enabledNetworks).length === 1
-    : showNativeTokenAsMainBalance;
+  const showNativeTokenAsMain =
+    showNativeTokenAsMainBalance && Object.keys(enabledNetworks).length === 1;
 
   const isNotAggregatedFiatBalance =
     !shouldShowFiat || showNativeTokenAsMain || isTestnet;
@@ -145,17 +131,13 @@ export const LegacyAggregatedBalance = ({
 
   /**
    * Determines the currency display type based on network configuration.
-   * Returns SECONDARY for multi-network setups when global network selector is removed,
-   * otherwise returns PRIMARY for single network or legacy configurations.
+   * Returns SECONDARY for multi-network setups, otherwise returns PRIMARY for single network configurations.
    */
   const getCurrencyDisplayType = (): typeof PRIMARY | typeof SECONDARY => {
     const isMultiNetwork = Object.keys(enabledNetworks).length > 1;
 
-    if (isGlobalNetworkSelectorRemoved) {
-      if (isMultiNetwork && showNativeTokenAsMainBalance) {
-        return SECONDARY;
-      }
-      return PRIMARY;
+    if (isMultiNetwork && showNativeTokenAsMainBalance) {
+      return SECONDARY;
     }
     return PRIMARY;
   };
@@ -183,16 +165,7 @@ export const LegacyAggregatedBalance = ({
           !showNativeTokenAsMain && !isTestnet && shouldShowFiat
         }
         privacyMode={privacyMode}
-      />
-      <ButtonIcon
-        color={IconColor.iconAlternative}
-        marginLeft={2}
-        size={ButtonIconSize.Md}
         onClick={handleSensitiveToggle}
-        iconName={privacyMode ? IconName.EyeSlash : IconName.Eye}
-        justifyContent={JustifyContent.center}
-        ariaLabel="Sensitive toggle"
-        data-testid="sensitive-toggle"
       />
     </Skeleton>
   );
@@ -210,35 +183,33 @@ export const CoinOverview = ({
   isSwapsChain,
   isSigningEnabled,
 }: CoinOverviewProps) => {
-  const enabledNetworks = useSelector(getEnabledNetworksByNamespace);
-
   const t: ReturnType<typeof useI18nContext> = useContext(I18nContext);
 
-  const trackEvent = useContext(MetaMetricsContext);
+  const { trackEvent } = useContext(MetaMetricsContext);
 
   const metaMetricsId = useSelector(getMetaMetricsId);
   const isMetaMetricsEnabled = useSelector(getParticipateInMetaMetrics);
   const isMarketingEnabled = useSelector(getDataCollectionForMarketing);
 
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
-  const { privacyMode, showNativeTokenAsMainBalance } =
-    useSelector(getPreferences);
+  const { privacyMode } = useSelector(getPreferences);
 
-  const isTokenNetworkFilterEqualCurrentNetwork = useSelector(
-    getIsTokenNetworkFilterEqualCurrentNetwork,
-  );
+  const selectedAccountGroup = useSelector(getSelectedAccountGroup);
 
-  const isEvm = useSelector(getMultichainIsEvm);
+  const hasBalance = useSelector(selectAccountGroupBalanceForEmptyState);
+  const isTestnet = useSelector(getMultichainIsTestnet);
 
-  const tokensMarketData = useSelector(getTokensMarketData);
-  const isMultichainAccountsState2Enabled = useSelector(
-    getIsMultichainAccountsState2Enabled,
-  );
+  useRewardsModal();
 
-  const anyEnabledNetworksAreAvailable = useSelector(
-    selectAnyEnabledNetworksAreAvailable,
-  );
+  // Only show empty state when Receive can act (selectedAccountGroup exists);
+  // otherwise the Receive button would be a no-op.
+  const shouldShowBalanceEmptyState =
+    Boolean(selectedAccountGroup) &&
+    !isTestnet &&
+    !balanceIsCached &&
+    !hasBalance;
 
   const handleSensitiveToggle = () => {
     dispatch(setPrivacyMode(!privacyMode));
@@ -263,8 +234,30 @@ export const CoinOverview = ({
     });
   }, [isMarketingEnabled, isMetaMetricsEnabled, metaMetricsId, trackEvent]);
 
+  const handleReceiveOnClick = useCallback(() => {
+    trace({ name: TraceName.ReceiveModal });
+    trackEvent({
+      event: MetaMetricsEventName.NavReceiveButtonClicked,
+      category: MetaMetricsEventCategory.Navigation,
+      properties: {
+        text: 'Receive',
+        location: 'balance_empty_state',
+        // TODO: Fix in https://github.com/MetaMask/metamask-extension/issues/31860
+        // eslint-disable-next-line @typescript-eslint/naming-convention
+        chain_id: chainId,
+      },
+    });
+
+    if (selectedAccountGroup) {
+      // Navigate to the multichain address list page with receive source
+      navigate(
+        getMultichainAccountAddressListReceivePagePath(selectedAccountGroup),
+      );
+    }
+  }, [selectedAccountGroup, navigate, trackEvent, chainId]);
+
   const renderPercentageAndAmountChange = () => {
-    const renderPortfolioButton = () => {
+    const renderPercentageAndAmountChangeTrail = () => {
       return (
         <ButtonLink
           endIconName={IconName.Export}
@@ -276,121 +269,62 @@ export const CoinOverview = ({
           {t('discover')}
         </ButtonLink>
       );
-      return null;
     };
 
-    const renderNativeTokenView = () => {
-      const value =
-        tokensMarketData?.[getNativeTokenAddress(chainId as Hex)]
-          ?.pricePercentChange1d;
-      return (
-        <Skeleton
-          isLoading={!anyEnabledNetworksAreAvailable && isZeroAmount(value)}
-        >
-          <Box className="wallet-overview__currency-wrapper">
-            <PercentageAndAmountChange value={value} />
-            {renderPortfolioButton()}
-          </Box>
-        </Skeleton>
-      );
-    };
-
-    const renderAggregatedView = () => (
+    return (
       <Box className="wallet-overview__currency-wrapper">
-        {isTokenNetworkFilterEqualCurrentNetwork ? (
-          <AggregatedPercentageOverview
-            portfolioButton={renderPortfolioButton}
-          />
-        ) : (
-          <AggregatedPercentageOverviewCrossChains
-            portfolioButton={renderPortfolioButton}
-          />
-        )}
-      </Box>
-    );
-
-    const renderNonEvmView = () => (
-      <Box className="wallet-overview__currency-wrapper">
-        <AggregatedMultichainPercentageOverview
-          privacyMode={privacyMode}
-          portfolioButton={renderPortfolioButton}
+        <AccountGroupBalanceChange
+          period="1d"
+          trailingChild={renderPercentageAndAmountChangeTrail}
         />
       </Box>
     );
-
-    // Early exit for state2 unified view
-    if (isMultichainAccountsState2Enabled) {
-      return (
-        <Box className="wallet-overview__currency-wrapper">
-          <AccountGroupBalanceChange
-            period="1d"
-            portfolioButton={renderPortfolioButton}
-          />
-        </Box>
-      );
-    }
-
-    if (!isEvm) {
-      return renderNonEvmView();
-    }
-
-    return showNativeTokenAsMainBalance &&
-      Object.keys(enabledNetworks).length === 1
-      ? renderNativeTokenView()
-      : renderAggregatedView();
   };
 
-  let balanceSection: React.ReactNode;
-  if (isMultichainAccountsState2Enabled) {
-    balanceSection = (
-      <AccountGroupBalance
-        classPrefix={classPrefix}
-        balanceIsCached={balanceIsCached}
-        handleSensitiveToggle={handleSensitiveToggle}
-      />
-    );
-  } else if (isEvm) {
-    balanceSection = (
-      <LegacyAggregatedBalance
-        classPrefix={classPrefix}
-        account={account}
-        balance={balance}
-        balanceIsCached={balanceIsCached}
-        handleSensitiveToggle={handleSensitiveToggle}
-      />
-    );
-  } else {
-    balanceSection = (
-      <AggregatedBalance
-        classPrefix={classPrefix}
-        balanceIsCached={balanceIsCached}
-        handleSensitiveToggle={handleSensitiveToggle}
-      />
-    );
-  }
+  const balanceSection: React.ReactNode = (
+    <AccountGroupBalance
+      classPrefix={classPrefix}
+      balanceIsCached={balanceIsCached}
+      handleSensitiveToggle={handleSensitiveToggle}
+      balance={balance}
+      chainId={chainId}
+    />
+  );
+
   return (
     <WalletOverview
+      // @ts-expect-error: React 18 ReactElement.key is Key|null, incompatible with @types/prop-types ReactNodeLike
       balance={
-        <Tooltip
-          position="top"
-          title={t('balanceOutdated')}
-          disabled={!balanceIsCached}
-        >
-          <div
-            className={`${classPrefix}-overview__balance [.wallet-overview-fullscreen_&]:items-center`}
+        shouldShowBalanceEmptyState ? (
+          <BalanceEmptyState
+            className="w-full max-w-[460px] self-center"
+            data-testid="coin-overview-balance-empty-state"
+            onClickReceive={handleReceiveOnClick}
+          />
+        ) : (
+          <Tooltip
+            position="top"
+            title={t('balanceOutdated')}
+            disabled={!balanceIsCached}
           >
-            <div className={`${classPrefix}-overview__primary-container`}>
-              {balanceSection}
-              {balanceIsCached && (
-                <span className={`${classPrefix}-overview__cached-star`}>
-                  *
-                </span>
-              )}
+            <div
+              className={`${classPrefix}-overview__balance [.wallet-overview-fullscreen_&]:items-center`}
+            >
+              <div className={`${classPrefix}-overview__primary-container`}>
+                {balanceSection}
+                {balanceIsCached && !shouldShowBalanceEmptyState && (
+                  <span className={`${classPrefix}-overview__cached-star`}>
+                    *
+                  </span>
+                )}
+              </div>
+              {!shouldShowBalanceEmptyState &&
+                renderPercentageAndAmountChange()}
             </div>
-            {renderPercentageAndAmountChange()}
-          </div>
-        </Tooltip>
+          </Tooltip>
+        )
       }
+      // @ts-expect-error: React 18 ReactElement.key is Key|null, incompatible with @types/prop-types ReactNodeLike
       buttons={
         <CoinButtons
           {...{

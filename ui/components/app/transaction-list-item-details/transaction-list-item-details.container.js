@@ -1,7 +1,8 @@
+import React from 'react';
 import { connect } from 'react-redux';
-import { withRouter } from 'react-router-dom';
-import { compose } from 'redux';
-import { getNetworkConfigurationsByChainId } from '../../../../shared/modules/selectors/networks';
+import { useNavigate } from 'react-router-dom';
+import { getNetworkConfigurationsByChainId } from '../../../../shared/lib/selectors/networks';
+import { isProtectedByEnforcedSimulations } from '../../../pages/confirmations/utils/confirm';
 import {
   getAccountName,
   getAddressBook,
@@ -10,14 +11,15 @@ import {
   getIsCustomNetwork,
   getRpcPrefsForCurrentProvider,
 } from '../../../selectors';
+import { isHardwareWallet } from '../../../../shared/lib/selectors/keyring';
 import { tryReverseResolveAddress } from '../../../store/actions';
 import TransactionListItemDetails from './transaction-list-item-details.component';
 
 const mapStateToProps = (state, ownProps) => {
-  const { recipientAddress, senderAddress } = ownProps;
+  const { senderAddress, transactionGroup } = ownProps;
   const addressBook = getAddressBook(state);
   const accounts = getInternalAccounts(state);
-  const recipientName = getAccountName(accounts, recipientAddress);
+  const senderAccountName = getAccountName(accounts, senderAddress);
 
   const getNickName = (address) => {
     const entry = addressBook.find((contact) => {
@@ -30,13 +32,18 @@ const mapStateToProps = (state, ownProps) => {
   const networkConfiguration = getNetworkConfigurationsByChainId(state);
   const isCustomNetwork = getIsCustomNetwork(state);
 
+  const isProtected = isProtectedByEnforcedSimulations(
+    transactionGroup?.primaryTransaction,
+  );
+
   return {
     rpcPrefs,
     networkConfiguration,
-    senderNickname: getNickName(senderAddress),
+    senderNickname: senderAccountName || getNickName(senderAddress),
     isCustomNetwork,
     blockExplorerLinkText: getBlockExplorerLinkText(state),
-    recipientName,
+    isHardwareWalletAccount: isHardwareWallet(state),
+    isProtectedByEnforcedSimulations: isProtected,
   };
 };
 
@@ -48,7 +55,12 @@ const mapDispatchToProps = (dispatch) => {
   };
 };
 
-export default compose(
-  withRouter,
-  connect(mapStateToProps, mapDispatchToProps),
+const ConnectedTransactionListItemDetails = connect(
+  mapStateToProps,
+  mapDispatchToProps,
 )(TransactionListItemDetails);
+
+export default function TransactionListItemDetailsContainer(props) {
+  const navigate = useNavigate();
+  return <ConnectedTransactionListItemDetails {...props} navigate={navigate} />;
+}

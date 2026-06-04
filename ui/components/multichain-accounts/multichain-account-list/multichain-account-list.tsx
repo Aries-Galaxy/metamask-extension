@@ -12,18 +12,27 @@ import {
   AccountWalletType,
 } from '@metamask/account-api';
 import { useDispatch, useSelector } from 'react-redux';
-import { useHistory } from 'react-router-dom';
-import { Box, Checkbox, Text } from '../../component-library';
-
+import { useNavigate } from 'react-router-dom';
+import { parseCaipAccountId } from '@metamask/utils';
 import {
-  AlignItems,
-  Display,
-  JustifyContent,
+  Box,
+  BoxBackgroundColor,
+  FontWeight,
+  Icon,
+  IconColor,
+  IconName,
+  IconSize,
+  Text,
   TextColor,
   TextVariant,
-} from '../../../helpers/constants/design-system';
+} from '@metamask/design-system-react';
+import { Checkbox } from '../../component-library';
+import { useI18nContext } from '../../../hooks/useI18nContext';
 import { MultichainAccountCell } from '../multichain-account-cell';
-import { AccountTreeWallets } from '../../../selectors/multichain-accounts/account-tree.types';
+import {
+  AccountTreeWallets,
+  MultichainAccountsState,
+} from '../../../selectors/multichain-accounts/account-tree.types';
 import { setSelectedMultichainAccount } from '../../../store/actions';
 import { DEFAULT_ROUTE } from '../../../helpers/constants/routes';
 import {
@@ -36,16 +45,23 @@ import {
   AccountOverviewTabKey,
 } from '../../../../shared/constants/app-state';
 import {
+  getAllPermittedAccountsForCurrentTab,
   getDefaultHomeActiveTabName,
   getHDEntropyIndex,
-  getPreferences,
 } from '../../../selectors';
+import { getPreferences } from '../../../../shared/lib/selectors/preferences';
 import { MetaMetricsContext } from '../../../contexts/metametrics';
 import { MultichainAccountMenu } from '../multichain-account-menu';
 import { AddMultichainAccount } from '../add-multichain-account';
 import { MultichainAccountEditModal } from '../multichain-account-edit-modal';
+import { getAccountGroupsByAddress } from '../../../selectors/multichain-accounts/account-tree';
+import {
+  STATUS_CONNECTED,
+  STATUS_CONNECTED_TO_ANOTHER_ACCOUNT,
+} from '../../../helpers/constants/connected-sites';
 import { selectBalanceForAllWallets } from '../../../selectors/assets';
 import { useFormatters } from '../../../hooks/useFormatters';
+import { VirtualizedList } from '../../ui/virtualized-list/virtualized-list';
 
 export type MultichainAccountListProps = {
   wallets: AccountTreeWallets;
@@ -54,7 +70,32 @@ export type MultichainAccountListProps = {
   isInSearchMode?: boolean;
   displayWalletHeader?: boolean;
   showAccountCheckbox?: boolean;
+  showConnectionStatus?: boolean;
+  showDefaultAddress?: boolean;
 };
+
+type GroupData = AccountTreeWallets[AccountWalletId]['groups'][AccountGroupId];
+
+type ListItem =
+  | {
+      type: 'header';
+      key: string;
+      text: string;
+      testId?: string;
+      sectionKey?: string;
+      isCollapsible?: boolean;
+      isExpanded?: boolean;
+    }
+  | {
+      type: 'account';
+      key: string;
+      groupId: string;
+      groupData: GroupData;
+      walletId: string;
+      showWalletName: boolean;
+    }
+  | { type: 'hidden-header'; key: string; count: number }
+  | { type: 'add-account'; key: string; walletId: string };
 
 export const MultichainAccountList = ({
   wallets,
@@ -63,10 +104,15 @@ export const MultichainAccountList = ({
   isInSearchMode = false,
   displayWalletHeader = true,
   showAccountCheckbox = false,
+  showConnectionStatus = false,
+  showDefaultAddress = false,
 }: MultichainAccountListProps) => {
+  const showAccountMenu = !showAccountCheckbox;
+
   const dispatch = useDispatch();
-  const history = useHistory();
-  const trackEvent = useContext(MetaMetricsContext);
+  const navigate = useNavigate();
+  const { trackEvent } = useContext(MetaMetricsContext);
+  const t = useI18nContext();
   const defaultHomeActiveTabName: AccountOverviewTabKey = useSelector(
     getDefaultHomeActiveTabName,
   );
@@ -82,10 +128,54 @@ export const MultichainAccountList = ({
   const [isAccountRenameModalOpen, setIsAccountRenameModalOpen] =
     useState(false);
 
-  const [renameAccountGroupId, setRenameAccountGroupId] = useState(undefined);
+  const [renameAccountGroupId, setRenameAccountGroupId] = useState<
+    string | undefined
+  >(undefined);
 
   const [openMenuAccountId, setOpenMenuAccountId] =
     useState<AccountGroupId | null>(null);
+
+  const permittedAccounts = useSelector(getAllPermittedAccountsForCurrentTab);
+  const permittedAddresses = useMemo(
+    () =>
+      showConnectionStatus
+        ? permittedAccounts.map(
+            (caipAccountId) => parseCaipAccountId(caipAccountId).address,
+          )
+        : [],
+    [permittedAccounts, showConnectionStatus],
+  );
+
+  // Memoize selector to avoid recreating it on every render
+  const selectConnectedAccountGroups = useCallback(
+    (state: MultichainAccountsState) => {
+      if (!showConnectionStatus || permittedAddresses.length === 0) {
+        return [];
+      }
+      return getAccountGroupsByAddress(state, permittedAddresses);
+    },
+    [showConnectionStatus, permittedAddresses],
+  );
+
+  const connectedAccountGroups = useSelector(selectConnectedAccountGroups);
+  const [isHiddenAccountsExpanded, setIsHiddenAccountsExpanded] =
+    useState(false);
+
+  const [collapsedSectionKeys, setCollapsedSectionKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+
+  const toggleSectionExpanded = useCallback((sectionKey: string) => {
+    setCollapsedSectionKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(sectionKey)) {
+        next.delete(sectionKey);
+      } else {
+        next.add(sectionKey);
+      }
+      return next;
+    });
+  }, []);
 
   const handleAccountRenameActionModalClose = useCallback(() => {
     setIsAccountRenameModalOpen(false);
@@ -93,7 +183,7 @@ export const MultichainAccountList = ({
   }, [setIsAccountRenameModalOpen, setRenameAccountGroupId]);
 
   const handleAccountRenameAction = useCallback(
-    (accountGroupId) => {
+    (accountGroupId: string) => {
       setRenameAccountGroupId(accountGroupId);
       setIsAccountRenameModalOpen(true);
       setOpenMenuAccountId(null);
@@ -114,8 +204,36 @@ export const MultichainAccountList = ({
     [selectedAccountGroups],
   );
 
-  const walletTree = useMemo(() => {
-    const defaultHandleAccountClick = (accountGroupId: AccountGroupId) => {
+  const { pinnedGroups, hiddenGroups } = useMemo(() => {
+    const pinned: {
+      groupId: string;
+      groupData: (typeof wallets)[AccountWalletId]['groups'][AccountGroupId];
+      walletId: string;
+    }[] = [];
+    const hidden: {
+      groupId: string;
+      groupData: (typeof wallets)[AccountWalletId]['groups'][AccountGroupId];
+      walletId: string;
+    }[] = [];
+
+    // Collect all groups to categorize them
+    Object.entries(wallets).forEach(([walletId, walletData]) => {
+      Object.entries(walletData.groups || {}).forEach(
+        ([groupId, groupData]) => {
+          if (groupData.metadata.pinned) {
+            pinned.push({ groupId, groupData, walletId });
+          } else if (groupData.metadata.hidden) {
+            hidden.push({ groupId, groupData, walletId });
+          }
+        },
+      );
+    });
+
+    return { pinnedGroups: pinned, hiddenGroups: hidden };
+  }, [wallets]);
+
+  const defaultHandleAccountClick = useCallback(
+    (accountGroupId: AccountGroupId) => {
       trackEvent({
         category: MetaMetricsEventCategory.Navigation,
         event: MetaMetricsEventName.NavAccountSwitched,
@@ -138,132 +256,350 @@ export const MultichainAccountList = ({
       });
 
       dispatch(setSelectedMultichainAccount(accountGroupId));
-      history.push(DEFAULT_ROUTE);
-    };
+      navigate(DEFAULT_ROUTE);
+    },
+    [trackEvent, hdEntropyIndex, defaultHomeActiveTabName, dispatch, navigate],
+  );
 
-    const handleAccountClickToUse =
-      handleAccountClick ?? defaultHandleAccountClick;
+  const handleAccountClickToUse = useCallback(
+    (accountGroupId: AccountGroupId) => {
+      const handlerToUse = handleAccountClick ?? defaultHandleAccountClick;
+      handlerToUse?.(accountGroupId);
+    },
+    [handleAccountClick, defaultHandleAccountClick],
+  );
 
-    return Object.entries(wallets).reduce(
-      (walletsAccumulator, [walletId, walletData]) => {
-        const walletName = walletData.metadata?.name;
+  const renderAccountCell = useCallback(
+    (
+      groupId: string,
+      groupData: GroupData,
+      walletId: string,
+      showWalletName: boolean,
+    ) => {
+      // If prop is provided, attempt render balance. Otherwise do not render balance.
+      const account = allBalances?.wallets?.[walletId]?.groups?.[groupId];
+      const balance = account?.totalBalanceInUserCurrency ?? 0;
+      const currency = account?.userCurrency ?? '';
 
-        const walletHeader = (
-          <Box
-            key={`wallet-header-${walletId}`}
-            data-testid="multichain-account-tree-wallet-header"
-            display={Display.Flex}
-            justifyContent={JustifyContent.spaceBetween}
-            alignItems={AlignItems.center}
-            paddingLeft={4}
-            paddingRight={4}
-            paddingTop={2}
-            paddingBottom={2}
-          >
-            <Text
-              variant={TextVariant.bodyMdMedium}
-              color={TextColor.textMuted}
-            >
-              {walletName}
-            </Text>
-          </Box>
-        );
+      // TODO: Implement logic for removable accounts
+      const isRemovable = false;
 
-        const groupsItems = Object.entries(walletData.groups || {}).flatMap(
-          ([groupId, groupData]) => {
-            // If prop is provided, attempt render balance. Otherwise do not render balance.
-            const account = allBalances?.wallets?.[walletId]?.groups?.[groupId];
-            const balance = account?.totalBalanceInUserCurrency ?? 0;
-            const currency = account?.userCurrency ?? '';
+      const isConnectedAccount = connectedAccountGroups.find(
+        (accountGroup) => accountGroup.id === groupId,
+      );
 
-            // TODO: Implement logic for removable accounts
-            const isRemovable = false;
-
-            return [
-              <Box
-                className="multichain-account-menu-popover__list--menu-item"
-                key={`multichain-account-cell-${groupId}`}
-              >
-                <MultichainAccountCell
-                  accountId={groupId as AccountGroupId}
-                  accountName={groupData.metadata.name}
-                  balance={formatCurrencyWithMinThreshold(balance, currency)}
-                  selected={selectedAccountGroupsSet.has(
-                    groupId as AccountGroupId,
-                  )}
-                  onClick={handleAccountClickToUse}
-                  privacyMode={privacyMode}
-                  startAccessory={
-                    showAccountCheckbox ? (
-                      <Box marginRight={4}>
-                        <Checkbox
-                          isChecked={selectedAccountGroupsSet.has(
-                            groupId as AccountGroupId,
-                          )}
-                          onChange={() => {
-                            handleAccountClickToUse(groupId as AccountGroupId);
-                          }}
-                        />
-                      </Box>
-                    ) : undefined
-                  }
-                  endAccessory={
-                    <MultichainAccountMenu
-                      accountGroupId={groupId as AccountGroupId}
-                      isRemovable={isRemovable}
-                      handleAccountRenameAction={handleAccountRenameAction}
-                      isOpen={openMenuAccountId === groupId}
-                      onToggle={() =>
-                        handleMenuToggle(groupId as AccountGroupId)
-                      }
-                    />
-                  }
-                />
-              </Box>,
-            ];
-          },
-        );
-
-        if (!isInSearchMode && walletData.type === AccountWalletType.Entropy) {
-          groupsItems.push(
-            <AddMultichainAccount
-              walletId={walletId as AccountWalletId}
-              key={`add-multichain-account-${walletId}`}
-            />,
-          );
+      let connectedStatus:
+        | typeof STATUS_CONNECTED
+        | typeof STATUS_CONNECTED_TO_ANOTHER_ACCOUNT
+        | undefined;
+      if (showConnectionStatus) {
+        if (isConnectedAccount) {
+          if (selectedAccountGroupsSet.has(groupId as AccountGroupId)) {
+            connectedStatus = STATUS_CONNECTED;
+          } else {
+            connectedStatus = STATUS_CONNECTED_TO_ANOTHER_ACCOUNT;
+          }
         }
+      }
 
-        return [
-          ...walletsAccumulator,
-          displayWalletHeader ? walletHeader : null,
-          ...groupsItems,
-        ];
-      },
-      [] as React.ReactNode[],
-    );
+      return (
+        <Box className="multichain-account-menu-popover__list--menu-item">
+          <MultichainAccountCell
+            accountId={groupId as AccountGroupId}
+            accountName={groupData.metadata.name}
+            accountNameString={groupData.metadata.name}
+            balance={formatCurrencyWithMinThreshold(balance, currency)}
+            selected={selectedAccountGroupsSet.has(groupId as AccountGroupId)}
+            onClick={handleAccountClickToUse}
+            connectionStatus={
+              connectedStatus as
+                | typeof STATUS_CONNECTED
+                | typeof STATUS_CONNECTED_TO_ANOTHER_ACCOUNT
+                | undefined
+            }
+            privacyMode={privacyMode}
+            showDefaultAddress={showDefaultAddress}
+            walletName={
+              showWalletName
+                ? wallets[walletId as AccountWalletId]?.metadata?.name
+                : undefined
+            }
+            startAccessory={
+              showAccountCheckbox ? (
+                <Box>
+                  <Checkbox
+                    isChecked={selectedAccountGroupsSet.has(
+                      groupId as AccountGroupId,
+                    )}
+                    onChange={() => {
+                      handleAccountClickToUse(groupId as AccountGroupId);
+                    }}
+                  />
+                </Box>
+              ) : undefined
+            }
+            endAccessory={
+              showAccountMenu ? (
+                <MultichainAccountMenu
+                  accountGroupId={groupId as AccountGroupId}
+                  isRemovable={isRemovable}
+                  handleAccountRenameAction={handleAccountRenameAction}
+                  isOpen={openMenuAccountId === groupId}
+                  onToggle={() => handleMenuToggle(groupId as AccountGroupId)}
+                />
+              ) : undefined
+            }
+          />
+        </Box>
+      );
+    },
+    [
+      allBalances,
+      formatCurrencyWithMinThreshold,
+      connectedAccountGroups,
+      showConnectionStatus,
+      selectedAccountGroupsSet,
+      handleAccountClickToUse,
+      privacyMode,
+      showAccountCheckbox,
+      wallets,
+      showAccountMenu,
+      handleAccountRenameAction,
+      openMenuAccountId,
+      handleMenuToggle,
+      showDefaultAddress,
+    ],
+  );
+
+  const walletTreeData = useMemo(() => {
+    const result: ListItem[] = [];
+
+    // Render pinned section (if there are any pinned accounts)
+    if (pinnedGroups.length > 0) {
+      const pinnedSectionKey = 'pinned';
+      const isPinnedExpanded = !collapsedSectionKeys.has(pinnedSectionKey);
+      result.push({
+        type: 'header',
+        key: 'pinned-header',
+        text: t('pinned'),
+        testId: 'multichain-account-tree-pinned-header',
+        sectionKey: pinnedSectionKey,
+        isCollapsible: true,
+        isExpanded: isPinnedExpanded,
+      });
+      if (isPinnedExpanded) {
+        pinnedGroups.forEach(({ groupId, groupData, walletId }) => {
+          result.push({
+            type: 'account',
+            key: `account-${groupId}`,
+            groupId,
+            groupData,
+            walletId,
+            showWalletName: !showDefaultAddress,
+          });
+        });
+      }
+    }
+
+    // Only show wallet header if we should show headers AND there are accounts to display in this wallet
+    const shouldShowWalletHeaders =
+      displayWalletHeader || pinnedGroups.length > 0;
+
+    Object.entries(wallets).forEach(([walletId, walletData]) => {
+      const accounts: ListItem[] = [];
+
+      Object.entries(walletData.groups || {}).forEach(
+        ([groupId, groupData]) => {
+          if (!groupData.metadata?.pinned && !groupData.metadata?.hidden) {
+            accounts.push({
+              type: 'account',
+              key: `account-${groupId}`,
+              groupId,
+              groupData,
+              walletId,
+              showWalletName: false,
+            });
+          }
+        },
+      );
+
+      if (!isInSearchMode && walletData.type === AccountWalletType.Entropy) {
+        accounts.push({
+          type: 'add-account',
+          key: `add-${walletId}`,
+          walletId,
+        });
+      }
+
+      if (accounts.length > 0) {
+        if (shouldShowWalletHeaders) {
+          const walletSectionKey = `wallet-${walletId}`;
+          const isWalletExpanded = !collapsedSectionKeys.has(walletSectionKey);
+          result.push({
+            type: 'header',
+            key: `wallet-${walletId}`,
+            text: walletData.metadata?.name || '',
+            testId: 'multichain-account-tree-wallet-header',
+            sectionKey: walletSectionKey,
+            isCollapsible: true,
+            isExpanded: isWalletExpanded,
+          });
+          if (isWalletExpanded) {
+            result.push(...accounts);
+          }
+          return;
+        }
+        result.push(...accounts);
+      }
+    });
+
+    // Render hidden section (if there are any hidden accounts)
+    if (hiddenGroups.length > 0) {
+      result.push({
+        type: 'hidden-header',
+        key: 'hidden-header',
+        count: hiddenGroups.length,
+      });
+      // Only render hidden accounts when expanded
+      if (isHiddenAccountsExpanded) {
+        hiddenGroups.forEach(({ groupId, groupData, walletId }) => {
+          result.push({
+            type: 'account',
+            key: `account-hidden-${groupId}`,
+            groupId,
+            groupData,
+            walletId,
+            showWalletName: !showDefaultAddress,
+          });
+        });
+      }
+    }
+
+    return result;
   }, [
-    handleAccountClick,
     wallets,
-    trackEvent,
-    hdEntropyIndex,
-    defaultHomeActiveTabName,
-    dispatch,
-    history,
+    pinnedGroups,
+    hiddenGroups,
     isInSearchMode,
     displayWalletHeader,
-    allBalances,
-    formatCurrencyWithMinThreshold,
-    selectedAccountGroupsSet,
-    privacyMode,
-    showAccountCheckbox,
-    handleAccountRenameAction,
-    handleMenuToggle,
-    openMenuAccountId,
+    isHiddenAccountsExpanded,
+    collapsedSectionKeys,
+    showDefaultAddress,
+    t,
   ]);
+
+  useEffect(() => {
+    endTrace({ name: TraceName.ShowAccountList });
+  }, []);
 
   return (
     <>
-      {walletTree}
+      <VirtualizedList
+        data={walletTreeData}
+        estimatedItemSize={64}
+        keyExtractor={(item) => item.key}
+        renderItem={({ item }) => {
+          if (item.type === 'header') {
+            if (item.isCollapsible && item.sectionKey) {
+              const isExpanded = item.isExpanded ?? true;
+              return (
+                <Box
+                  asChild
+                  backgroundColor={BoxBackgroundColor.BackgroundDefault}
+                  className="w-full"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleSectionExpanded(item.sectionKey as string)
+                    }
+                    className="flex w-full px-4 py-2 justify-between items-center"
+                    data-testid={item.testId}
+                    aria-expanded={isExpanded}
+                  >
+                    <Text
+                      variant={TextVariant.BodyMd}
+                      fontWeight={FontWeight.Medium}
+                      color={TextColor.TextAlternative}
+                    >
+                      {item.text}
+                    </Text>
+                    <Icon
+                      name={isExpanded ? IconName.ArrowUp : IconName.ArrowDown}
+                      size={IconSize.Md}
+                      color={IconColor.IconAlternative}
+                    />
+                  </button>
+                </Box>
+              );
+            }
+
+            return (
+              <Box data-testid={item.testId} className="flex px-4 py-2">
+                <Text
+                  variant={TextVariant.BodyMd}
+                  fontWeight={FontWeight.Medium}
+                  color={TextColor.TextAlternative}
+                >
+                  {item.text}
+                </Text>
+              </Box>
+            );
+          }
+
+          if (item.type === 'hidden-header') {
+            return (
+              <Box
+                asChild
+                backgroundColor={BoxBackgroundColor.BackgroundDefault}
+                className="w-full"
+              >
+                <button
+                  type="button"
+                  onClick={() =>
+                    setIsHiddenAccountsExpanded(!isHiddenAccountsExpanded)
+                  }
+                  className="hidden-accounts-list flex w-full px-4 py-2 justify-between items-center"
+                  data-testid="multichain-account-tree-hidden-header"
+                >
+                  <Text
+                    variant={TextVariant.BodyMd}
+                    fontWeight={FontWeight.Medium}
+                    color={TextColor.TextAlternative}
+                  >
+                    {t('hidden')} ({item.count})
+                  </Text>
+                  <Icon
+                    name={
+                      isHiddenAccountsExpanded
+                        ? IconName.ArrowUp
+                        : IconName.ArrowDown
+                    }
+                    size={IconSize.Md}
+                    color={IconColor.IconAlternative}
+                  />
+                </button>
+              </Box>
+            );
+          }
+
+          if (item.type === 'add-account') {
+            return (
+              <AddMultichainAccount
+                walletId={item.walletId as AccountWalletId}
+              />
+            );
+          }
+
+          const { groupId, groupData, walletId, showWalletName } = item;
+          return renderAccountCell(
+            groupId,
+            groupData,
+            walletId,
+            showWalletName,
+          );
+        }}
+      />
       {isAccountRenameModalOpen && (
         <MultichainAccountEditModal
           key={renameAccountGroupId}

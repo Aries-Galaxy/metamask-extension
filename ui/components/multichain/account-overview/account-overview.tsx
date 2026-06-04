@@ -4,8 +4,9 @@ import {
   BtcAccountType,
   EthAccountType,
   SolAccountType,
+  TrxAccountType,
 } from '@metamask/keyring-api';
-import { getSelectedInternalAccount } from '../../../selectors';
+import { getSelectedInternalAccount } from '../../../../shared/lib/selectors/accounts';
 import { AccountOverviewEth } from './account-overview-eth';
 import { AccountOverviewUnknown } from './account-overview-unknown';
 import { AccountOverviewCommonProps } from './common';
@@ -30,6 +31,7 @@ export function AccountOverview(props: AccountOverviewProps) {
       case BtcAccountType.P2wpkh:
       case BtcAccountType.P2tr:
       case SolAccountType.DataAccount:
+      case TrxAccountType.Eoa:
         return <AccountOverviewNonEvm {...props}></AccountOverviewNonEvm>;
       default:
         return <AccountOverviewUnknown {...props}></AccountOverviewUnknown>;

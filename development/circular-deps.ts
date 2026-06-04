@@ -61,7 +61,6 @@ const ENTRYPOINTS = [
   // 'development/', // Development scripts and utilities
   // 'test/', // Tests
   'app/', // Main application code
-  'offscreen/', // Offscreen page for MV3
   'shared/', // Shared utilities and components
   'ui/', // UI components and styles
 ];
@@ -83,6 +82,7 @@ async function update(): Promise<void> {
         // get options from .prettierrc
         ...prettierOptions,
         filepath: TARGET_FILE,
+        trailingComma: 'none', // Ensure no trailing commas for JSONC compatibility
       },
     );
     writeFileSync(TARGET_FILE, formatted);

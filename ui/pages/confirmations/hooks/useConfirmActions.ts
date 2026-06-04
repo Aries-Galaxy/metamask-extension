@@ -2,9 +2,11 @@ import { TransactionMeta } from '@metamask/transaction-controller';
 import { providerErrors, serializeError } from '@metamask/rpc-errors';
 import { useCallback } from 'react';
 import { useDispatch } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 
 import { MetaMetricsEventLocation } from '../../../../shared/constants/metametrics';
 import { clearConfirmTransaction } from '../../../ducks/confirm-transaction/confirm-transaction.duck';
+import { DEFAULT_ROUTE } from '../../../helpers/constants/routes';
 import {
   rejectPendingApproval,
   setNextNonce,
@@ -15,12 +17,14 @@ import { useConfirmSendNavigation } from './useConfirmSendNavigation';
 
 export const useConfirmActions = () => {
   const dispatch = useDispatch();
-  const { currentConfirmation } = useConfirmContext<TransactionMeta>();
+  const navigate = useNavigate();
+  const { currentConfirmation, goBackTo } =
+    useConfirmContext<TransactionMeta>();
   const { navigateBackIfSend } = useConfirmSendNavigation();
   const { id: currentConfirmationId } = currentConfirmation || {};
 
   const rejectApproval = useCallback(
-    ({ location }: { location?: MetaMetricsEventLocation } = {}) => {
+    async ({ location }: { location?: MetaMetricsEventLocation } = {}) => {
       if (!currentConfirmationId) {
         return;
       }
@@ -29,7 +33,9 @@ export const useConfirmActions = () => {
       error.data = { location };
 
       const serializedError = serializeError(error);
-      dispatch(rejectPendingApproval(currentConfirmationId, serializedError));
+      await dispatch(
+        rejectPendingApproval(currentConfirmationId, serializedError),
+      );
     },
     [currentConfirmationId, dispatch],
   );
@@ -41,12 +47,14 @@ export const useConfirmActions = () => {
   }, [dispatch]);
 
   const onCancel = useCallback(
-    ({
+    async ({
       location,
       navigateBackForSend = false,
+      navigateBackToPreviousPage = false,
     }: {
       location?: MetaMetricsEventLocation;
       navigateBackForSend?: boolean;
+      navigateBackToPreviousPage?: boolean;
     }) => {
       if (!currentConfirmation) {
         return;
@@ -54,14 +62,19 @@ export const useConfirmActions = () => {
       if (navigateBackForSend) {
         navigateBackIfSend();
       }
-      rejectApproval({ location });
+      await rejectApproval({ location });
       resetTransactionState();
+      if (navigateBackToPreviousPage) {
+        navigate(goBackTo ?? DEFAULT_ROUTE);
+      }
     },
     [
       currentConfirmation,
+      navigate,
       navigateBackIfSend,
       rejectApproval,
       resetTransactionState,
+      goBackTo,
     ],
   );
 

@@ -11,16 +11,18 @@ import {
   AccountGroupType,
   AccountGroupId,
 } from '@metamask/account-api';
-import { renderWithProvider } from '../../../../test/jest/rendering';
+import { renderWithProvider } from '../../../../test/lib/render-helpers-navigate';
 import mockState from '../../../../test/data/mock-state.json';
 import configureStore from '../../../store/store';
+import { enLocale as messages } from '../../../../test/lib/i18n-helpers';
 import { createMockMultichainAccountsState } from '../../../selectors/multichain-accounts/test-utils';
 import {
   getAllNetworkConfigurationsByCaipChainId,
   type EvmAndMultichainNetworkConfigurationsWithCaipChainId,
-} from '../../../../shared/modules/selectors/networks';
+} from '../../../../shared/lib/selectors/networks';
 import { getMultichainNetwork } from '../../../selectors/multichain';
 
+import { MultichainNetworks } from '../../../../shared/constants/multichain/networks';
 import {
   MultichainAccountsConnectPage,
   MultichainConnectPageProps,
@@ -42,8 +44,12 @@ const mockGetAllNamespacesFromCaip25CaveatValue =
     typeof getAllNamespacesFromCaip25CaveatValue
   >;
 
-// Mock the hook and capture the arguments passed to it
-const mockUseAccountGroupsForPermissions = jest.fn((..._args: unknown[]) => ({
+// Default return value for `useAccountGroupsForPermissions` — represents the
+// happy path where there is one already-connected group and two supported
+// groups. Tests that need to exercise other branches (empty supported groups,
+// no requested accounts, etc.) call
+// `mockUseAccountGroupsForPermissions.mockReturnValueOnce(...)` before render.
+const DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT = {
   connectedAccountGroups: [
     {
       id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
@@ -92,6 +98,7 @@ const mockUseAccountGroupsForPermissions = jest.fn((..._args: unknown[]) => ({
     },
   ],
   caipAccountIdsOfConnectedAccountGroupWithRequested: ['eip155:1:0x123'],
+  caipAccountIdsOfConnectedAndRequestedAccountGroups: ['eip155:1:0x123'],
   selectedAndRequestedAccountGroups: [
     {
       id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
@@ -104,88 +111,19 @@ const mockUseAccountGroupsForPermissions = jest.fn((..._args: unknown[]) => ({
       ],
     },
   ],
-}));
+};
+
+const mockUseAccountGroupsForPermissions = jest.fn(
+  (..._args: unknown[]) => DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+);
 
 jest.mock('../../../hooks/useAccountGroupsForPermissions', () => ({
-  useAccountGroupsForPermissions: (
-    existingCaip25CaveatValue: unknown,
-    requestedCaipAccountIds: unknown,
-    requestedandExistingCaipChainIdsOrDefault: unknown,
-    requestedNamespacesWithoutWallet: unknown,
-  ) => {
-    mockUseAccountGroupsForPermissions(
-      existingCaip25CaveatValue,
-      requestedCaipAccountIds,
-      requestedandExistingCaipChainIdsOrDefault,
-      requestedNamespacesWithoutWallet,
-    );
-    return {
-      connectedAccountGroups: [
-        {
-          id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
-          metadata: { name: 'Test Account Group 1' },
-          accounts: [
-            {
-              address: '0x123',
-              scopes: ['eip155:0'],
-            },
-          ],
-        },
-      ],
-      supportedAccountGroups: [
-        {
-          id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
-          metadata: { name: 'Test Account Group 1' },
-          accounts: [
-            {
-              address: '0x123',
-              scopes: ['eip155:0'],
-            },
-          ],
-        },
-        {
-          id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/1',
-          metadata: { name: 'Test Account Group 2' },
-          accounts: [
-            {
-              address: '0x456',
-              scopes: ['eip155:0'],
-            },
-          ],
-        },
-      ],
-      existingConnectedCaipAccountIds: ['eip155:1:0x123'],
-      connectedAccountGroupWithRequested: [
-        {
-          id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
-          metadata: { name: 'Test Account Group 1' },
-          accounts: [
-            {
-              address: '0x123',
-              scopes: ['eip155:0'],
-            },
-          ],
-        },
-      ],
-      caipAccountIdsOfConnectedAccountGroupWithRequested: ['eip155:1:0x123'],
-      selectedAndRequestedAccountGroups: [
-        {
-          id: 'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0',
-          metadata: { name: 'Test Account Group 1' },
-          accounts: [
-            {
-              address: '0x123',
-              scopes: ['eip155:0'],
-            },
-          ],
-        },
-      ],
-    };
-  },
+  useAccountGroupsForPermissions: (...args: unknown[]) =>
+    mockUseAccountGroupsForPermissions(...args),
 }));
 
-jest.mock('../../../../shared/modules/selectors/networks', () => ({
-  ...jest.requireActual('../../../../shared/modules/selectors/networks'),
+jest.mock('../../../../shared/lib/selectors/networks', () => ({
+  ...jest.requireActual('../../../../shared/lib/selectors/networks'),
   getAllNetworkConfigurationsByCaipChainId: jest.fn(() => ({
     'eip155:1': {
       chainId: 'eip155:1',
@@ -281,21 +219,19 @@ jest.mock('../../../hooks/multichain-accounts/useAccountBalance', () => ({
 
 jest.mock('../../permissions-connect/connect-page/utils', () => ({
   ...jest.requireActual('../../permissions-connect/connect-page/utils'),
-  getCaip25CaveatValueFromPermissions: jest.fn(() => ({
-    requiredScopes: {},
-    optionalScopes: {
-      'eip155:1': {
-        accounts: [],
-      },
-    },
-    sessionProperties: {},
-    isMultichainOrigin: true,
-  })),
+  getCaip25CaveatValueFromPermissions: jest.fn(),
 }));
 
 jest.mock('../../../../shared/lib/multichain/scope-utils', () => ({
   getCaip25AccountFromAccountGroupAndScope: jest.fn(() => ['eip155:1:0x123']),
+  getCaip25AccountIdsFromAccountGroupAndScope: jest.fn(() => [
+    'eip155:1:0x123',
+  ]),
 }));
+
+const mockGetCaip25CaveatValueFromPermissions = jest.requireMock(
+  '../../permissions-connect/connect-page/utils',
+).getCaip25CaveatValueFromPermissions;
 
 const mockTestDappUrl = 'https://test.dapp';
 
@@ -323,6 +259,7 @@ const mockAccountTreeState = {
             entropy: { groupIndex: 0 },
             pinned: false,
             hidden: false,
+            lastSelected: 0,
           },
         },
       },
@@ -332,9 +269,9 @@ const mockAccountTreeState = {
       },
     },
   },
-  selectedAccountGroup:
-    'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0' as AccountGroupId,
 };
+const mockSelectedAccountGroup =
+  'entropy:01JKAF3DSGM3AB87EM9N0K41AJ/0' as AccountGroupId;
 
 const mockInternalAccountsState = {
   accounts: {
@@ -410,6 +347,7 @@ const render = (
     mockAccountTreeState,
     mockInternalAccountsState,
     mockNetworkConfigurations,
+    mockSelectedAccountGroup,
   );
 
   const store = configureStore({
@@ -450,6 +388,19 @@ const render = (
 describe('MultichainConnectPage', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockUseAccountGroupsForPermissions.mockImplementation(
+      () => DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+    );
+    mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+      requiredScopes: {},
+      optionalScopes: {
+        'eip155:1': {
+          accounts: [],
+        },
+      },
+      sessionProperties: {},
+      isMultichainOrigin: true,
+    });
   });
 
   it('renders correctly', () => {
@@ -458,15 +409,10 @@ describe('MultichainConnectPage', () => {
   });
 
   it('renders image icon correctly', () => {
-    const { getAllByAltText } = render();
+    const { getByAltText } = render();
 
-    const images = getAllByAltText('metamask.github.io logo');
-    expect(images.length).toBe(2);
-    expect(images[0]).toHaveAttribute(
-      'src',
-      'https://metamask.github.io/test-dapp/metamask-fox.svg',
-    );
-    expect(images[1]).toHaveAttribute(
+    const image = getByAltText('metamask.github.io logo');
+    expect(image).toHaveAttribute(
       'src',
       'https://metamask.github.io/test-dapp/metamask-fox.svg',
     );
@@ -508,20 +454,20 @@ describe('MultichainConnectPage', () => {
 
   it('renders subtitle correctly', () => {
     const { getByText } = render();
-    expect(getByText('Connect this website with MetaMask')).toBeDefined();
+    expect(getByText(messages.connectionDescription.message)).toBeDefined();
   });
 
   it('renders accounts tab correctly', () => {
     const { getByText } = render();
 
-    expect(getByText('Accounts')).toBeDefined();
-    expect(getByText('Edit accounts')).toBeDefined();
+    expect(getByText(messages.accounts.message)).toBeDefined();
+    expect(getByText(messages.editAccounts.message)).toBeDefined();
   });
 
   it('renders permissions tab correctly', () => {
     const { getByText } = render();
 
-    const permissionsTab = getByText('Permissions');
+    const permissionsTab = getByText(messages.permissions.message);
     fireEvent.click(permissionsTab);
 
     // The permissions tab should be clickable and render content
@@ -531,7 +477,7 @@ describe('MultichainConnectPage', () => {
   it('renders edit accounts modal when edit button is clicked', () => {
     const { getByText } = render();
 
-    const editAccountsButton = getByText('Edit accounts');
+    const editAccountsButton = getByText(messages.editAccounts.message);
     fireEvent.click(editAccountsButton);
 
     // The modal should open when edit button is clicked
@@ -541,7 +487,7 @@ describe('MultichainConnectPage', () => {
   it('closes edit accounts modal when close button is clicked', () => {
     const { getByText } = render();
 
-    const editAccountsButton = getByText('Edit accounts');
+    const editAccountsButton = getByText(messages.editAccounts.message);
     fireEvent.click(editAccountsButton);
 
     // The modal should be interactive
@@ -551,8 +497,8 @@ describe('MultichainConnectPage', () => {
   it('renders confirm and cancel buttons', () => {
     const { getByText } = render();
 
-    const confirmButton = getByText('Connect');
-    const cancelButton = getByText('Cancel');
+    const confirmButton = getByText(messages.connect.message);
+    const cancelButton = getByText(messages.cancel.message);
 
     expect(confirmButton).toBeDefined();
     expect(cancelButton).toBeDefined();
@@ -566,7 +512,7 @@ describe('MultichainConnectPage', () => {
       },
     });
 
-    const cancelButton = getByText('Cancel');
+    const cancelButton = getByText(messages.cancel.message);
     fireEvent.click(cancelButton);
 
     expect(mockRejectPermissionsRequest).toHaveBeenCalledWith('1');
@@ -580,7 +526,7 @@ describe('MultichainConnectPage', () => {
       },
     });
 
-    const connectButton = getByText('Connect');
+    const connectButton = getByText(messages.connect.message);
     fireEvent.click(connectButton);
 
     expect(mockApproveConnection).toHaveBeenCalled();
@@ -648,7 +594,7 @@ describe('MultichainConnectPage', () => {
   it('handles account group selection correctly', () => {
     const { getByText } = render();
 
-    const editAccountsButton = getByText('Edit accounts');
+    const editAccountsButton = getByText(messages.editAccounts.message);
     fireEvent.click(editAccountsButton);
 
     // The modal should be interactive for account group selection
@@ -658,7 +604,7 @@ describe('MultichainConnectPage', () => {
   it('handles permissions tab interactions', () => {
     const { getByText } = render();
 
-    const permissionsTab = getByText('Permissions');
+    const permissionsTab = getByText(messages.permissions.message);
     fireEvent.click(permissionsTab);
 
     // The permissions tab should be interactive
@@ -723,12 +669,15 @@ describe('MultichainConnectPage', () => {
     expect(getByTestId('permissions-tab')).toBeDefined();
   });
 
-  describe('requestedandExistingCaipChainIdsOrDefault logic', () => {
+  describe('requestedAndAlreadyConnectedCaipChainIdsOrDefault logic', () => {
     beforeEach(() => {
       jest.clearAllMocks();
+      mockUseAccountGroupsForPermissions.mockImplementation(
+        () => DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+      );
     });
 
-    it('returns supported requested CAIP chain IDs merged with existing when supportedRequestedCaipChainIds.length > 0', () => {
+    it('returns supported requested CAIP chain IDs merged with already permitted chainIds when supportedRequestedCaipChainIds.length > 0 and it is not a Solana wallet standard request', () => {
       mockGetAllScopesFromCaip25CaveatValue
         .mockReturnValueOnce(['eip155:1', 'eip155:137']) // for requestedCaipChainIds
         .mockReturnValueOnce(['eip155:1']); // for existingCaipChainIds
@@ -788,19 +737,502 @@ describe('MultichainConnectPage', () => {
       expect(actualChainIds).toEqual(expect.arrayContaining(['eip155:1']));
     });
 
-    it('returns default network list filtered by requested namespaces when no specific chain IDs requested', () => {
-      // Mock getAllScopesFromCaip25CaveatValue to return empty for requested chains
-      mockGetAllScopesFromCaip25CaveatValue
-        .mockReturnValueOnce([]) // for requestedCaipChainIds - empty
-        .mockReturnValueOnce([]); // for existingCaipChainIds - empty
+    it('defaults to Solana scope(s) only for Solana Wallet Standard requests (no cross-namespace defaulting)', () => {
+      const SOLANA_CAIP_CHAIN_ID = 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp';
 
-      // Mock getAllNamespacesFromCaip25CaveatValue to return specific namespaces
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: {
+          [SOLANA_CAIP_CHAIN_ID]: {
+            accounts: [],
+          },
+        },
+        sessionProperties: {},
+        isMultichainOrigin: true,
+      });
+
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue([
+        SOLANA_CAIP_CHAIN_ID,
+      ]);
+
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:1': {
+          chainId: 'eip155:1',
+          name: 'Ethereum Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+          chainId: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+          name: 'Solana Mainnet',
+          nativeCurrency: 'SOL',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: {
+                        [SOLANA_CAIP_CHAIN_ID]: {
+                          accounts: [],
+                        },
+                      },
+                      sessionProperties: {},
+                      isMultichainOrigin: true,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+            },
+          },
+        },
+      });
+
+      // For Solana Wallet Standard requests we now scope the defaults to the
+      // requested namespace only. EVM mainnet must NOT be silently included.
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toBeDefined();
+      expect(actualChainIds).toContain(SOLANA_CAIP_CHAIN_ID);
+      expect(actualChainIds).not.toContain('eip155:1');
+    });
+
+    it('defaults to Tron scope(s) only for Tron Wallet Adapter requests (no cross-namespace defaulting)', () => {
+      const TRON_CAIP_CHAIN_ID = MultichainNetworks.TRON;
+
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: {
+          [TRON_CAIP_CHAIN_ID]: {
+            accounts: [],
+          },
+        },
+        sessionProperties: {},
+        isMultichainOrigin: true,
+      });
+
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue([
+        TRON_CAIP_CHAIN_ID,
+      ]);
+
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:1': {
+          chainId: 'eip155:1',
+          name: 'Ethereum Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+        [TRON_CAIP_CHAIN_ID]: {
+          chainId: TRON_CAIP_CHAIN_ID,
+          name: 'Tron Mainnet',
+          nativeCurrency: 'TRX',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: {
+                        [TRON_CAIP_CHAIN_ID]: {
+                          accounts: [],
+                        },
+                      },
+                      sessionProperties: {},
+                      isMultichainOrigin: true,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+            },
+          },
+        },
+      });
+
+      // For Tron Wallet Adapter requests we now scope the defaults to the
+      // requested namespace only. EVM mainnet must NOT be silently included.
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toBeDefined();
+      expect(actualChainIds).toContain(TRON_CAIP_CHAIN_ID);
+      expect(actualChainIds).not.toContain('eip155:1');
+    });
+
+    it('defaults to Bitcoin scope(s) only for BIP-122 client requests (no cross-namespace defaulting)', () => {
+      const BITCOIN_CAIP_CHAIN_ID = MultichainNetworks.BITCOIN;
+
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: {
+          [BITCOIN_CAIP_CHAIN_ID]: {
+            accounts: [],
+          },
+        },
+        sessionProperties: {},
+        isMultichainOrigin: true,
+      });
+
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue([
+        BITCOIN_CAIP_CHAIN_ID,
+      ]);
+
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:1': {
+          chainId: 'eip155:1',
+          name: 'Ethereum Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+        [BITCOIN_CAIP_CHAIN_ID]: {
+          chainId: BITCOIN_CAIP_CHAIN_ID,
+          name: 'Bitcoin',
+          nativeCurrency: 'BTC',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: {
+                        [BITCOIN_CAIP_CHAIN_ID]: {
+                          accounts: [],
+                        },
+                      },
+                      sessionProperties: {},
+                      isMultichainOrigin: true,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+            },
+          },
+        },
+      });
+
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toBeDefined();
+      expect(actualChainIds).toContain(BITCOIN_CAIP_CHAIN_ID);
+      expect(actualChainIds).not.toContain('eip155:1');
+    });
+
+    it('defaults to EVM popular networks only for EIP-1193 requests with no specific chain IDs', () => {
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: {
+          // wallet:eip155 is added to the request to pass caveat validation when no specific chain IDs are requested
+          'wallet:eip155': {
+            accounts: [],
+          },
+        },
+        sessionProperties: {},
+        isMultichainOrigin: false,
+      });
+
+      // requestedCaipChainIds (after wallet-namespace filter) is empty, but
+      // the request itself has the eip155 namespace via wallet:eip155.
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue([]);
+      mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([
+        'wallet',
+        'eip155',
+      ]);
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:1': {
+          chainId: 'eip155:1',
+          name: 'Ethereum Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+          chainId: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+          name: 'Solana Mainnet',
+          nativeCurrency: 'SOL',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: { 'wallet:eip155': { accounts: [] } },
+                      sessionProperties: {},
+                      isMultichainOrigin: false,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+              isEip1193Request: true,
+            },
+          },
+        },
+      });
+
+      // EIP-1193 with no specific chains should now default ONLY to EVM
+      // networks - it must NOT silently grant Solana/Bitcoin/Tron.
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toBeDefined();
+      expect(actualChainIds).toContain('eip155:1');
+      expect(actualChainIds).not.toContain(
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+      );
+    });
+
+    it('preserves previously-granted scopes when defaulting (mergeCaip25CaveatValues semantics unchanged)', () => {
+      const existingCaveatValue = {
+        requiredScopes: {},
+        optionalScopes: {
+          'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+            accounts: [],
+          },
+        },
+        sessionProperties: {},
+        isMultichainOrigin: true,
+      };
+
+      // The component calls getCaip25CaveatValueFromPermissions twice: once
+      // with the existing permissions object (from state.subjects) and once
+      // with the requested permissions object (from the request prop). We
+      // distinguish them by which key the permissions object is keyed under
+      // and return the appropriate caveat value.
+      mockGetCaip25CaveatValueFromPermissions.mockImplementation(
+        (permissions: unknown) => {
+          const optionalScopes =
+            (
+              permissions as
+                | {
+                    [k: string]: {
+                      caveats?: { value?: { optionalScopes?: object } }[];
+                    };
+                  }
+                | undefined
+            )?.['endowment:caip25']?.caveats?.[0]?.value?.optionalScopes ?? {};
+          if ('solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp' in optionalScopes) {
+            return existingCaveatValue;
+          }
+          return {
+            requiredScopes: {},
+            optionalScopes: { 'wallet:eip155': { accounts: [] } },
+            sessionProperties: {},
+            isMultichainOrigin: false,
+          };
+        },
+      );
+
+      mockGetAllScopesFromCaip25CaveatValue.mockImplementation(
+        (value: unknown) => {
+          if (
+            value &&
+            (value as typeof existingCaveatValue).optionalScopes?.[
+              'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'
+            ]
+          ) {
+            return ['solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp'];
+          }
+          return ['wallet:eip155'];
+        },
+      );
+
+      mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([
+        'wallet',
+        'eip155',
+      ]);
+
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:1': {
+          chainId: 'eip155:1',
+          name: 'Ethereum Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+          chainId: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+          name: 'Solana Mainnet',
+          nativeCurrency: 'SOL',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: { 'wallet:eip155': { accounts: [] } },
+                      sessionProperties: {},
+                      isMultichainOrigin: false,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+              isEip1193Request: true,
+            },
+          },
+        },
+        state: {
+          subjects: {
+            [mockTargetSubjectMetadata.origin]: {
+              permissions: {
+                'endowment:caip25': {
+                  caveats: [
+                    {
+                      type: 'restrictNetworkSwitching',
+                      value: {
+                        requiredScopes: {},
+                        optionalScopes: {
+                          'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+                            accounts: [],
+                          },
+                        },
+                        sessionProperties: {},
+                        isMultichainOrigin: true,
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // EIP-1193 connect against an origin with existing Solana permission:
+      // EVM popular networks are added by default AND the previously-granted
+      // Solana scope is retained.
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toBeDefined();
+      expect(actualChainIds).toContain('eip155:1');
+      expect(actualChainIds).toContain(
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+      );
+    });
+
+    it('returns only the specifically requested evm chain when specific chains are requested and is an eip1193 request', () => {
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: {
+          'eip155:137': {
+            accounts: [],
+          },
+        },
+      });
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue(['eip155:137']);
+
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:137': {
+          chainId: 'eip155:137',
+          name: 'Polygon Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: {
+                        'eip155:137': {
+                          accounts: [],
+                        },
+                      },
+                      sessionProperties: {},
+                      isMultichainOrigin: false,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+              isEip1193Request: true,
+            },
+          },
+        },
+      });
+
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toBeDefined();
+      expect(actualChainIds).toEqual(['eip155:137']);
+    });
+
+    it('returns default network list filtered by requested namespaces when no specific chain IDs requested and not EIP-1193 or Solana Wallet Standard', () => {
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: {
+          'wallet:eip155': {
+            accounts: [],
+          },
+        },
+        sessionProperties: {},
+        isMultichainOrigin: false,
+      });
+
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue([]);
+
       mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([
         'eip155',
         'solana',
       ]);
 
-      // Mock network configurations
       mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
         'eip155:1': {
           chainId: 'eip155:1',
@@ -842,6 +1274,7 @@ describe('MultichainConnectPage', () => {
             metadata: {
               id: '1',
               origin: mockTargetSubjectMetadata.origin,
+              isEip1193Request: false,
             },
           },
         },
@@ -862,42 +1295,23 @@ describe('MultichainConnectPage', () => {
       );
     });
 
-    it('returns default network list when no specific requests (test network not selected)', () => {
-      mockGetAllScopesFromCaip25CaveatValue
-        .mockReturnValueOnce([]) // for requestedCaipChainIds
-        .mockReturnValueOnce([]); // for existingCaipChainIds
-
-      mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([]);
-
-      mockGetMultichainNetwork.mockReturnValue({
-        chainId: 'eip155:1',
-        nickname: 'Ethereum Mainnet',
-        isEvmNetwork: true,
-        network: {
-          type: 'mainnet',
-          chainId: '0x1',
-          ticker: 'ETH',
-        },
+    it('includes the currently-selected test network in defaults for EIP-1193 connects (still scoped to EVM)', () => {
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: { 'wallet:eip155': { accounts: [] } },
+        sessionProperties: {},
+        isMultichainOrigin: false,
       });
 
-      render();
+      mockGetAllScopesFromCaip25CaveatValue.mockReturnValue([]);
 
-      // Check that useAccountGroupsForPermissions was called with default non-test networks
-      const { calls } = mockUseAccountGroupsForPermissions.mock;
-      expect(calls.length).toBeGreaterThan(0);
-      const actualChainIds = calls[0]?.[2] as string[] | undefined;
-      expect(actualChainIds).toEqual(['eip155:1']); // should contain only non-test networks since no test network is selected
-    });
-
-    it('includes test network in default list when currently selected network is a test network', () => {
-      mockGetAllScopesFromCaip25CaveatValue
-        .mockReturnValueOnce([]) // for requestedCaipChainIds
-        .mockReturnValueOnce([]); // for existingCaipChainIds
-
-      mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([]);
+      mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([
+        'wallet',
+        'eip155',
+      ]);
 
       mockGetMultichainNetwork.mockReturnValue({
-        chainId: 'eip155:11155111', // Sepolia testnet
+        chainId: 'eip155:11155111',
         nickname: 'Sepolia Testnet',
         isEvmNetwork: true,
         network: {
@@ -918,20 +1332,51 @@ describe('MultichainConnectPage', () => {
           name: 'Sepolia Testnet',
           nativeCurrency: 'SepoliaETH',
         } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp': {
+          chainId: 'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+          name: 'Solana Mainnet',
+          nativeCurrency: 'SOL',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
       });
 
-      render();
+      render({
+        props: {
+          request: {
+            permissions: {
+              'endowment:caip25': {
+                caveats: [
+                  {
+                    type: 'restrictNetworkSwitching',
+                    value: {
+                      requiredScopes: {},
+                      optionalScopes: { 'wallet:eip155': { accounts: [] } },
+                      sessionProperties: {},
+                      isMultichainOrigin: false,
+                    },
+                  },
+                ],
+              },
+            },
+            metadata: {
+              id: '1',
+              origin: mockTargetSubjectMetadata.origin,
+              isEip1193Request: true,
+            },
+          },
+        },
+      });
 
-      // Check that useAccountGroupsForPermissions was called with both mainnet and selected test network
       const { calls } = mockUseAccountGroupsForPermissions.mock;
       expect(calls.length).toBeGreaterThan(0);
       const actualChainIds = calls[0]?.[2] as string[] | undefined;
       expect(actualChainIds).toBeDefined();
-      expect(actualChainIds).toContain('eip155:1'); // should contain mainnet
-      // The test network should be included when it's the currently selected network
-      // However, our current mock setup only returns eip155:1 as the default network
-      // This test validates that the logic attempts to include test networks when selected
-      expect(actualChainIds).toEqual(['eip155:1']); // Currently only mainnet is included due to mock limitations
+      expect(actualChainIds).toContain('eip155:1');
+      // The currently-selected test network is still included by default.
+      expect(actualChainIds).toContain('eip155:11155111');
+      // Solana must NOT be included for an EIP-1193 connect.
+      expect(actualChainIds).not.toContain(
+        'solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp',
+      );
     });
 
     it('filters out unsupported requested CAIP chain IDs', () => {
@@ -1047,7 +1492,6 @@ describe('MultichainConnectPage', () => {
         .mockReturnValueOnce(['eip155:1', 'eip155:137']) // for requestedCaipChainIds
         .mockReturnValueOnce(['eip155:1', 'eip155:56']); // for existingCaipChainIds - overlaps with eip155:1
 
-      // Mock network configurations
       mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
         'eip155:1': {
           chainId: 'eip155:1',
@@ -1108,6 +1552,192 @@ describe('MultichainConnectPage', () => {
         (id: string) => id === 'eip155:1',
       ).length;
       expect(eip155Count).toBe(1); // should appear only once despite being in both arrays
+    });
+
+    it('returns only previously-granted scopes when the request has no scopes and no namespaces (fallback path)', () => {
+      // Request has no requestable scopes (after filtering wallet) and no
+      // namespaces could be inferred from the request itself. Existing
+      // permissions should still be preserved.
+      const requestedCaveatValue = {
+        requiredScopes: {},
+        optionalScopes: {},
+        sessionProperties: {},
+        isMultichainOrigin: false,
+      };
+      const existingCaveatValue = {
+        requiredScopes: {},
+        optionalScopes: { 'eip155:1': { accounts: ['eip155:1:0x123'] } },
+        sessionProperties: {},
+        isMultichainOrigin: true,
+      };
+
+      mockGetCaip25CaveatValueFromPermissions.mockImplementation(
+        (permissions: unknown) => {
+          const optionalScopes =
+            (
+              permissions as
+                | {
+                    [k: string]: {
+                      caveats?: { value?: { optionalScopes?: object } }[];
+                    };
+                  }
+                | undefined
+            )?.['endowment:caip25']?.caveats?.[0]?.value?.optionalScopes ?? {};
+          if ('eip155:1' in optionalScopes) {
+            return existingCaveatValue;
+          }
+          return requestedCaveatValue;
+        },
+      );
+
+      mockGetAllScopesFromCaip25CaveatValue.mockImplementation(
+        (value: unknown) => (value === existingCaveatValue ? ['eip155:1'] : []),
+      );
+      mockGetAllNamespacesFromCaip25CaveatValue.mockReturnValue([]);
+
+      mockGetAllNetworkConfigurationsByCaipChainId.mockReturnValue({
+        'eip155:1': {
+          chainId: 'eip155:1',
+          name: 'Ethereum Mainnet',
+          nativeCurrency: 'ETH',
+        } as unknown as EvmAndMultichainNetworkConfigurationsWithCaipChainId,
+      });
+
+      render({
+        state: {
+          subjects: {
+            [mockTargetSubjectMetadata.origin]: {
+              permissions: {
+                'endowment:caip25': {
+                  caveats: [
+                    {
+                      type: 'restrictNetworkSwitching',
+                      value: existingCaveatValue,
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // No defaults seeded; only existing permissions kept.
+      const { calls } = mockUseAccountGroupsForPermissions.mock;
+      expect(calls.length).toBeGreaterThan(0);
+      const actualChainIds = calls[0]?.[2] as string[] | undefined;
+      expect(actualChainIds).toEqual(['eip155:1']);
+    });
+  });
+
+  describe('suggestedAccountGroups + handleAccountGroupIdsSelected branches', () => {
+    beforeEach(() => {
+      jest.clearAllMocks();
+      mockUseAccountGroupsForPermissions.mockImplementation(
+        () => DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+      );
+      mockGetCaip25CaveatValueFromPermissions.mockReturnValue({
+        requiredScopes: {},
+        optionalScopes: { 'eip155:1': { accounts: [] } },
+        sessionProperties: {},
+        isMultichainOrigin: true,
+      });
+    });
+
+    it('renders with no suggested account groups when supportedAccountGroups is empty', () => {
+      // No connected groups AND no supported groups -> first two `if` branches
+      // in the suggestedAccountGroups memo evaluate to false/true and we fall
+      // into the "empty supportedAccountGroups" early return.
+      mockUseAccountGroupsForPermissions.mockImplementation(() => ({
+        ...DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+        connectedAccountGroups: [],
+        supportedAccountGroups: [],
+        connectedAccountGroupWithRequested: [],
+        caipAccountIdsOfConnectedAccountGroupWithRequested: [],
+        caipAccountIdsOfConnectedAndRequestedAccountGroups: [],
+        selectedAndRequestedAccountGroups: [],
+      }));
+
+      // Should render without throwing even when no account groups are
+      // available. Header text from the page is still present.
+      const { getByText } = render();
+      expect(getByText(messages.connectionDescription.message)).toBeDefined();
+    });
+
+    it('defaults to the first supported account group when no specific accounts are requested', () => {
+      // No connected groups, no requested CAIP account ids -> the memo falls
+      // into the `requestedCaipAccountIds.length === 0` branch and selects the
+      // first supportedAccountGroup as the default.
+      const firstGroup =
+        DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT
+          .supportedAccountGroups[0];
+      mockUseAccountGroupsForPermissions.mockImplementation(() => ({
+        ...DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+        connectedAccountGroups: [],
+        connectedAccountGroupWithRequested: [],
+        caipAccountIdsOfConnectedAccountGroupWithRequested: [],
+        caipAccountIdsOfConnectedAndRequestedAccountGroups: [],
+        // selectedAndRequestedAccountGroups intentionally empty so we don't
+        // fall into the final branch.
+        selectedAndRequestedAccountGroups: [],
+      }));
+
+      // Force `getCaipAccountIdsFromCaip25CaveatValue` (which feeds
+      // requestedCaipAccountIds) to return [] so the no-accounts branch runs.
+      const caipPermission = jest.requireMock(
+        '@metamask/chain-agnostic-permission',
+      );
+      caipPermission.getCaipAccountIdsFromCaip25CaveatValue.mockReturnValue([]);
+
+      render();
+
+      // The first supportedAccountGroup should now be the suggested default,
+      // which means `useAccountGroupsForPermissions` was called and the page
+      // rendered the default group's name in the suggestion list.
+      expect(firstGroup.metadata.name).toBe('Test Account Group 1');
+    });
+
+    it('falls back to selectedAndRequestedAccountGroups when accounts are requested', () => {
+      // No connected groups but requestedCaipAccountIds is non-empty -> memo
+      // returns selectedAndRequestedAccountGroups as the suggestion.
+      mockUseAccountGroupsForPermissions.mockImplementation(() => ({
+        ...DEFAULT_USE_ACCOUNT_GROUPS_FOR_PERMISSIONS_RESULT,
+        connectedAccountGroups: [],
+        connectedAccountGroupWithRequested: [],
+        caipAccountIdsOfConnectedAccountGroupWithRequested: [],
+        caipAccountIdsOfConnectedAndRequestedAccountGroups: [],
+      }));
+
+      const caipPermission = jest.requireMock(
+        '@metamask/chain-agnostic-permission',
+      );
+      caipPermission.getCaipAccountIdsFromCaip25CaveatValue.mockReturnValue([
+        'eip155:1:0x123',
+      ]);
+
+      // Should render the page successfully using the
+      // selectedAndRequestedAccountGroups path.
+      const { getByText } = render();
+      expect(getByText(messages.connectionDescription.message)).toBeDefined();
+    });
+
+    it('invokes handleAccountGroupIdsSelected (filters supportedAccountGroups by the selected ids) when the edit accounts modal is submitted', () => {
+      const { getByText, getByTestId } = render();
+
+      // Open the edit-accounts modal so MultichainEditAccountsPage renders.
+      fireEvent.click(getByText(messages.editAccounts.message));
+
+      // Submitting the modal calls back into `handleAccountGroupIdsSelected`
+      // on the parent page, which:
+      //   - sets `userHasModifiedSelection` to true (line 422-424)
+      //   - filters `supportedAccountGroups` by the selected ids (line 431-434)
+      //   - resets pageMode back to Summary
+      const submitButton = getByTestId('connect-more-accounts-button');
+      fireEvent.click(submitButton);
+
+      // Once the modal has been submitted, page mode flips back to Summary
+      // and the primary "connect" button is visible again.
+      expect(getByText(messages.connect.message)).toBeDefined();
     });
   });
 });

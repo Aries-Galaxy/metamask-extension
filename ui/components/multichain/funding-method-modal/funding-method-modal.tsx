@@ -8,6 +8,7 @@ import {
   ModalHeader,
   Text,
   IconName,
+  type ModalProps,
 } from '../../component-library';
 import {
   TextVariant,
@@ -36,21 +37,22 @@ import {
 import { MetaMetricsContext } from '../../../contexts/metametrics';
 import FundingMethodItem from './funding-method-item';
 
-type FundingMethodModalProps = {
+type FundingMethodModalProps = Omit<ModalProps, 'children'> & {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   onClickReceive: () => void;
 };
 
-export const FundingMethodModal: React.FC<FundingMethodModalProps> = ({
+export const FundingMethodModal = ({
   isOpen,
   onClose,
   title,
   onClickReceive,
-}) => {
+  ...props
+}: FundingMethodModalProps) => {
   const t = useI18nContext();
-  const trackEvent = useContext(MetaMetricsContext);
+  const { trackEvent } = useContext(MetaMetricsContext);
   const { openBuyCryptoInPdapp } = useRamps();
   const { address: accountAddress } = useSelector(getSelectedAccount);
   const { chainId } = useSelector(getMultichainCurrentNetwork);
@@ -113,7 +115,7 @@ export const FundingMethodModal: React.FC<FundingMethodModalProps> = ({
   }, [chainId, symbol]);
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} data-testid="funding-method-modal">
+    <Modal isOpen={isOpen} onClose={onClose} {...props}>
       <ModalOverlay />
       <ModalContent modalDialogProps={{ padding: 0 }}>
         <ModalHeader paddingBottom={2} onClose={onClose}>

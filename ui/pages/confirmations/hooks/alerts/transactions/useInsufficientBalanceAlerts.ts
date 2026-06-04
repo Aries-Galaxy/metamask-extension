@@ -1,24 +1,23 @@
-import { CaipChainId, Hex } from '@metamask/utils';
+'use no memo';
+
+import { TransactionMeta } from '@metamask/transaction-controller';
 import { useMemo } from 'react';
 import { useSelector } from 'react-redux';
-import { TransactionMeta } from '@metamask/transaction-controller';
-
-import { sumHexes } from '../../../../../../shared/modules/conversion.utils';
-import { Alert } from '../../../../../ducks/confirm-alerts/confirm-alerts';
-import {
-  getMultichainNetworkConfigurationsByChainId,
-  getUseTransactionSimulations,
-  selectTransactionAvailableBalance,
-  selectTransactionFeeById,
-} from '../../../../../selectors';
-import { useI18nContext } from '../../../../../hooks/useI18nContext';
-import { Severity } from '../../../../../helpers/constants/design-system';
 import {
   AlertActionKey,
   RowAlertKey,
 } from '../../../../../components/app/confirm/info/row/constants';
-import { isBalanceSufficient } from '../../../send-legacy/send.utils';
+import { Alert } from '../../../../../ducks/confirm-alerts/confirm-alerts';
+import { Severity } from '../../../../../helpers/constants/design-system';
+import { useI18nContext } from '../../../../../hooks/useI18nContext';
+import { getUseTransactionSimulations } from '../../../../../selectors';
+import { isPerpsWithdrawTransaction } from '../../../../../../shared/lib/transactions.utils';
 import { useConfirmContext } from '../../../context/confirm';
+import { useIsGaslessSupported } from '../../gas/useIsGaslessSupported';
+import { useHasInsufficientBalance } from '../../useHasInsufficientBalance';
+import { useTransactionPayHasSourceAmount } from '../../pay/useTransactionPayHasSourceAmount';
+import { useTransactionPayPrimaryRequiredToken } from '../../pay/useTransactionPayData';
+import { useTransactionPayToken } from '../../pay/useTransactionPayToken';
 
 export function useInsufficientBalanceAlerts({
   ignoreGasFeeToken,
@@ -27,53 +26,68 @@ export function useInsufficientBalanceAlerts({
 } = {}): Alert[] {
   const t = useI18nContext();
   const { currentConfirmation } = useConfirmContext<TransactionMeta>();
-  const {
-    id: transactionId,
-    chainId,
-    selectedGasFeeToken,
-    gasFeeTokens,
-    txParams: { value = '0x0' } = {},
-  } = currentConfirmation ?? {};
-
-  const batchTransactionValues =
-    currentConfirmation?.nestedTransactions?.map(
-      (trxn) => (trxn.value as Hex) ?? 0x0,
-    ) ?? [];
-
+  const { selectedGasFeeToken, gasFeeTokens, excludeNativeTokenForFee } =
+    currentConfirmation ?? {};
+  // Gasless flows (Perps Withdraw via HyperLiquid -> Relay) don't use the
+  // user's native balance for gas, so suppress the "insufficient balance"
+  // alert even when native balance is low.
+  const isIgnoredType = isPerpsWithdrawTransaction(currentConfirmation);
+  const { hasInsufficientBalance, nativeCurrency } =
+    useHasInsufficientBalance();
   const isSimulationEnabled = useSelector(getUseTransactionSimulations);
+  const isSponsored = currentConfirmation?.isGasFeeSponsored;
+  const {
+    isSupported: isGaslessSupported,
+    pending: isGaslessSupportedPending,
+  } = useIsGaslessSupported();
 
-  const balance = useSelector((state) =>
-    selectTransactionAvailableBalance(state, transactionId, chainId),
-  );
+  const isUsingPay = useTransactionPayHasSourceAmount();
+  const { payToken } = useTransactionPayToken();
+  const primaryRequiredToken = useTransactionPayPrimaryRequiredToken();
 
-  const totalValue = sumHexes(value, ...batchTransactionValues);
+  const isPayPendingInput =
+    Boolean(payToken) && primaryRequiredToken?.amountRaw === '0';
 
-  const { hexMaximumTransactionFee } = useSelector((state) =>
-    selectTransactionFeeById(state, transactionId),
-  );
+  const isGasFeeTokensEmpty = gasFeeTokens?.length === 0;
 
-  const [multichainNetworks, evmNetworks] = useSelector(
-    getMultichainNetworkConfigurationsByChainId,
-  );
+  // Check if gasless check has completed (regardless of result)
+  const isGaslessCheckComplete = !isGaslessSupportedPending;
 
-  const nativeCurrency = (
-    multichainNetworks[chainId as CaipChainId] ?? evmNetworks[chainId]
-  )?.nativeCurrency;
+  // Transaction is sponsored only if it's marked as sponsored AND gasless is supported
+  const isSponsoredTransaction = isSponsored && isGaslessSupported;
 
-  const insufficientBalance = !isBalanceSufficient({
-    amount: totalValue,
-    gasTotal: hexMaximumTransactionFee,
-    balance,
-  });
+  // Simulation is complete if it's disabled, or if enabled and gasFeeTokens is loaded
+  const isSimulationComplete = !isSimulationEnabled || Boolean(gasFeeTokens);
 
-  const canSkipSimulationChecks = ignoreGasFeeToken || !isSimulationEnabled;
-  const hasGaslessSimulationFinished =
-    canSkipSimulationChecks || Boolean(gasFeeTokens);
+  // Check if user has selected a gas fee token (or we're ignoring that check)
+  // Note: In the case of chains with no native token (ex: Tempo), `selectedGasFeeToken`
+  // may be populated despite no gas token being available.
+  // For those chains, `excludeNativeTokenForFee` will always be `true`, hence we can
+  // rely on the combination of `excludeNativeTokenForFee` and `isGasFeeTokensEmpty`.
+  const hasNoGasFeeTokenSelected =
+    ignoreGasFeeToken ||
+    !selectedGasFeeToken ||
+    (excludeNativeTokenForFee && isGasFeeTokensEmpty);
+
+  // Gasless check is complete AND one of:
+  //  - Gasless is NOT supported (native currency needed for gas)
+  //  - Gasless IS supported but no alternative gas fee tokens are available
+  //  - Gas fee tokens are available but none is selected
+  const shouldCheckGaslessConditions =
+    isGaslessCheckComplete &&
+    (!isGaslessSupported ||
+      isGasFeeTokensEmpty ||
+      (!isGasFeeTokensEmpty && !selectedGasFeeToken));
 
   const showAlert =
-    insufficientBalance &&
-    hasGaslessSimulationFinished &&
-    (ignoreGasFeeToken || !selectedGasFeeToken);
+    hasInsufficientBalance &&
+    !isUsingPay &&
+    !isPayPendingInput &&
+    isSimulationComplete &&
+    hasNoGasFeeTokenSelected &&
+    shouldCheckGaslessConditions &&
+    !isSponsoredTransaction &&
+    !isIgnoredType;
 
   return useMemo(() => {
     if (!showAlert) {
